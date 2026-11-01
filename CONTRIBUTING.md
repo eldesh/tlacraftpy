@@ -23,10 +23,9 @@ ruff format .
 ruff format --check .
 ```
 
-## APIドキュメント
+## docstring
 
 公開APIと型のdocstringはGoogle形式で記述します。
-概要、引数・属性の意味、戻り値、例外の記述規則は[APIドキュメント](docs/api.md)にあります。
 
 Google形式のdocstringチェックは、次のコマンドで実行します。
 
