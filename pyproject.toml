@@ -1,24 +1,43 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "tlacraftpy"
 version = "0.1.0"
-description = "A small Python specification DSL that exports TLA+ and runs TLC"
+description = "Write temporal specifications in Python and verify them with TLA+ and TLC"
 readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["tla+", "tlc", "model-checking", "temporal-logic", "formal-methods"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Testing",
+]
+
+[project.urls]
+Repository = "https://github.com/eldesh/tlacraftpy"
+Documentation = "https://github.com/eldesh/tlacraftpy/tree/master/docs"
+Issues = "https://github.com/eldesh/tlacraftpy/issues"
 
 [project.optional-dependencies]
 dev = ["ruff==0.17.3"]
+release = ["build==1.6.1", "twine==7.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["tlacraftpy*"]
+namespaces = false
 
 [tool.ruff]
 target-version = "py311"
 line-length = 88
 
-# [tool.pytla]
+# [tool.tlacraftpy]
 # java = "/path/to/java"  # fallback when java is absent from PATH
 # tlc_jar = "/path/to/tla2tools.jar"

@@ -57,7 +57,7 @@ def state(cls):
             or not list(domain)
         ):
             raise SpecificationError(f"{name}: expected a nonempty Enum domain")
-    cls.__pytla_fields__ = dict(fields)
+    cls.__tlacraftpy_fields__ = dict(fields)
     return cls
 
 
@@ -104,7 +104,7 @@ class Specification:
     fairness: tuple[WeakFairness, ...] = ()
 
     def __post_init__(self):
-        if not hasattr(self.state, "__pytla_fields__"):
+        if not hasattr(self.state, "__tlacraftpy_fields__"):
             raise SpecificationError("state must be an @state class")
         if not isinstance(self.init, Definition) or self.init.kind != "initial":
             raise SpecificationError("init must be an @initial definition")

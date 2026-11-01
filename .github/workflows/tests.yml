@@ -44,22 +44,28 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Install tlacraftpy
-        run: python -m pip install -e .
+      - name: Install packaging tools
+        run: python -m pip install '.[release]'
+      - name: Build and check distributions
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Install wheel
+        run: python -m pip install --force-reinstall --no-deps dist/*.whl
       - name: Download TLC 1.7.4
         shell: bash
         env:
-          PYTLA_TLC_JAR: ${{ runner.temp }}/tla2tools.jar
+          TLACRAFTPY_TLC_JAR: ${{ runner.temp }}/tla2tools.jar
         run: |
           curl --fail --location --retry 3 --connect-timeout 10 --max-time 120 \
             https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar \
-            --output "$PYTLA_TLC_JAR"
-          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $PYTLA_TLC_JAR" | sha256sum --check
-          echo "PYTLA_TLC_JAR=$PYTLA_TLC_JAR" >> "$GITHUB_ENV"
+            --output "$TLACRAFTPY_TLC_JAR"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $TLACRAFTPY_TLC_JAR" | sha256sum --check
+          echo "TLACRAFTPY_TLC_JAR=$TLACRAFTPY_TLC_JAR" >> "$GITHUB_ENV"
       - name: Unit and TLC integration tests
         run: python -m unittest discover -s tests -v
       - name: Request-response example
-        run: python examples/request_response.py --tlc-jar "$PYTLA_TLC_JAR"
+        run: python examples/request_response.py --tlc-jar "$TLACRAFTPY_TLC_JAR"
       - name: Save generated specification and TLC log
         if: always()
         uses: actions/upload-artifact@v7.0.2
@@ -68,7 +74,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           path: |
-            .pytla/request_response/*.tla
-            .pytla/request_response/*.cfg
-            .pytla/request_response/mapping.json
-            .pytla/request_response/tlc.log
+            .tlacraftpy/request_response/*.tla
+            .tlacraftpy/request_response/*.cfg
+            .tlacraftpy/request_response/mapping.json
+            .tlacraftpy/request_response/tlc.log

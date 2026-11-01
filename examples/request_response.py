@@ -3,7 +3,7 @@
 import argparse
 from enum import Enum, auto
 
-from pytla import (
+from tlacraftpy import (
     Specification,
     Status,
     action,

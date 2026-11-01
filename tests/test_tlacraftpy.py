@@ -10,7 +10,7 @@ from enum import Enum, IntEnum, auto
 from pathlib import Path
 from unittest.mock import patch
 
-from pytla import (
+from tlacraftpy import (
     ConfigurationError,
     Specification,
     SpecificationError,
@@ -30,7 +30,7 @@ from pytla import (
     unchanged,
     weak_fairness,
 )
-from pytla.runner import classify, parse_trace, resolve_tools
+from tlacraftpy.runner import classify, parse_trace, resolve_tools
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 from request_response import (  # noqa: E402
@@ -223,7 +223,7 @@ class CompilerTests(unittest.TestCase):
                 with self.assertRaises(SpecificationError) as error:
                     compile_spec(Specification(State, init, any_action(a)))
             self.assertEqual(stdout.getvalue(), "")
-            self.assertIn("test_pytla.py:", str(error.exception))
+            self.assertIn("test_tlacraftpy.py:", str(error.exception))
 
     def test_bad_initial_and_temporal_levels(self):
         for definition in (bare_enum, wrong_arguments):
@@ -345,11 +345,11 @@ class RunnerTests(unittest.TestCase):
     def test_timeout_is_incomplete_and_logged(self):
         with (
             patch(
-                "pytla.runner.resolve_tools",
+                "tlacraftpy.runner.resolve_tools",
                 return_value=("java", Path("/fake/tlc.jar")),
             ),
             patch(
-                "pytla.runner.subprocess.run",
+                "tlacraftpy.runner.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("java", 1, b"partial"),
             ),
         ):
@@ -362,11 +362,11 @@ class RunnerTests(unittest.TestCase):
     def test_invocation_and_log(self):
         with (
             patch(
-                "pytla.runner.resolve_tools",
+                "tlacraftpy.runner.resolve_tools",
                 return_value=("java", Path("/fake/a b.jar")),
             ),
             patch(
-                "pytla.runner.subprocess.run",
+                "tlacraftpy.runner.subprocess.run",
                 return_value=subprocess.CompletedProcess([], 0, SUCCESS),
             ) as run,
         ):
@@ -379,10 +379,10 @@ class RunnerTests(unittest.TestCase):
     def test_launch_error(self):
         with (
             patch(
-                "pytla.runner.resolve_tools",
+                "tlacraftpy.runner.resolve_tools",
                 return_value=("java", Path("/fake/tlc.jar")),
             ),
-            patch("pytla.runner.subprocess.run", side_effect=OSError("denied")),
+            patch("tlacraftpy.runner.subprocess.run", side_effect=OSError("denied")),
         ):
             with self.assertRaises(TLCError):
                 check(make_system(), output_dir=self.tmp.name, verbose=False)
@@ -393,31 +393,31 @@ class RunnerTests(unittest.TestCase):
             jar = root / "tlc.jar"
             jar.touch()
             (root / "pyproject.toml").write_text(
-                '[tool.pytla]\njava="missing"\ntlc_jar="tlc.jar"\n'
+                '[tool.tlacraftpy]\njava="missing"\ntlc_jar="tlc.jar"\n'
             )
             source = root / "spec.py"
-            with patch("pytla.runner.shutil.which", return_value="/usr/bin/java"):
+            with patch("tlacraftpy.runner.shutil.which", return_value="/usr/bin/java"):
                 self.assertEqual(resolve_tools(source), ("/usr/bin/java", jar))
-            with patch("pytla.runner.shutil.which", return_value=None):
+            with patch("tlacraftpy.runner.shutil.which", return_value=None):
                 with self.assertRaises(ConfigurationError):
                     resolve_tools(source)
             executable = root / "java"
             executable.touch()
             executable.chmod(0o755)
             (root / "pyproject.toml").write_text(
-                '[tool.pytla]\njava="java"\ntlc_jar="tlc.jar"\n'
+                '[tool.tlacraftpy]\njava="java"\ntlc_jar="tlc.jar"\n'
             )
-            with patch("pytla.runner.shutil.which", return_value=None):
+            with patch("tlacraftpy.runner.shutil.which", return_value=None):
                 self.assertEqual(resolve_tools(source), (str(executable), jar))
 
     def test_missing_jar_is_configuration_error_no_download(self):
-        with patch("pytla.runner.shutil.which", return_value="/usr/bin/java"):
+        with patch("tlacraftpy.runner.shutil.which", return_value="/usr/bin/java"):
             with self.assertRaises(ConfigurationError):
                 resolve_tools(Path(self.tmp.name) / "spec.py")
 
 
 @unittest.skipUnless(
-    os.environ.get("PYTLA_TLC_JAR"), "set PYTLA_TLC_JAR to run real TLC tests"
+    os.environ.get("TLACRAFTPY_TLC_JAR"), "set TLACRAFTPY_TLC_JAR to run real TLC tests"
 )
 class TLCIntegrationTests(unittest.TestCase):
     def run_tlc(self, system, prop, directory):
@@ -425,7 +425,7 @@ class TLCIntegrationTests(unittest.TestCase):
             return check(
                 system,
                 properties=[prop],
-                tlc_jar=os.environ["PYTLA_TLC_JAR"],
+                tlc_jar=os.environ["TLACRAFTPY_TLC_JAR"],
                 output_dir=directory,
                 timeout=30,
                 verbose=False,

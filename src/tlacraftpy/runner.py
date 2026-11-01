@@ -152,9 +152,9 @@ def _configuration(source):
             if config.is_file()
             else {}
         )
-        settings = data.get("tool", {}).get("pytla", {})
+        settings = data.get("tool", {}).get("tlacraftpy", {})
         if not isinstance(settings, dict):
-            raise ConfigurationError("[tool.pytla] must be a TOML table")
+            raise ConfigurationError("[tool.tlacraftpy] must be a TOML table")
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ConfigurationError(f"Cannot read {config}: {exc}") from exc
     return root, settings
@@ -174,7 +174,7 @@ def resolve_tools(source, tlc_jar=None):
         configured = settings.get("java")
         if configured is None:
             raise ConfigurationError(
-                "Java not found on PATH; set [tool.pytla].java in pyproject.toml"
+                "Java not found on PATH; set [tool.tlacraftpy].java in pyproject.toml"
             )
         executable = _path(configured, root, "java")
         if not executable.is_file() or not os.access(executable, os.X_OK):
@@ -183,7 +183,7 @@ def resolve_tools(source, tlc_jar=None):
     jar = tlc_jar if tlc_jar is not None else settings.get("tlc_jar")
     if jar is None:
         raise ConfigurationError(
-            "TLC is not configured; pass tlc_jar= or set [tool.pytla].tlc_jar. "
+            "TLC is not configured; pass tlc_jar= or set [tool.tlacraftpy].tlc_jar. "
             "No Java or TLC is downloaded automatically."
         )
     # Explicit arguments are relative to the caller's cwd; config paths to project root.

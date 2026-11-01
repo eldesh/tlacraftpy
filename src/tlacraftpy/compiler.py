@@ -236,7 +236,7 @@ def compile_spec(spec: Specification, *, properties=(), module="Model"):
     properties = tuple(properties)
     if any(not isinstance(p, Definition) or p.kind != "temporal" for p in properties):
         raise SpecificationError("properties must be @temporal definitions")
-    fields = spec.state.__pytla_fields__
+    fields = spec.state.__tlacraftpy_fields__
     variables = {name: f"v{i}" for i, name in enumerate(fields)}
     domains = list(dict.fromkeys(fields.values()))
     atoms = {
@@ -336,7 +336,7 @@ def export(spec, *, properties=(), output_dir=None, module="Model"):
     directory = (
         Path(output_dir)
         if output_dir is not None
-        else project_root(compiled.source) / ".pytla" / compiled.source.stem
+        else project_root(compiled.source) / ".tlacraftpy" / compiled.source.stem
     ).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     tla, cfg = directory / f"{module}.tla", directory / f"{module}.cfg"
