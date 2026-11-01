@@ -7,6 +7,8 @@ name = "tlacraftpy"
 version = "0.1.0"
 description = "Write temporal specifications in Python and verify them with TLA+ and TLC"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 keywords = ["tla+", "tlc", "model-checking", "temporal-logic", "formal-methods"]
 classifiers = [

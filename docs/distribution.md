@@ -15,6 +15,11 @@ setuptoolsと`pyproject.toml`による標準的なPythonパッケージとして
 wheelの`py3-none-any`は、対応するPython 3でOSに依存せずインストールできる形式を示します。
 JavaとTLCは、モデル検査を実行する環境に用意し、`[tool.tlacraftpy]`でパスを設定します。
 
+## ライセンス
+
+MITライセンスで配布します。条文と著作権表示は[LICENSE](../LICENSE)にあります。
+wheelとソース配布物にLICENSEを同梱し、パッケージ情報の`License-Expression`に`MIT`を記録します。
+
 ## ビルドと検査
 
 プロジェクトのルートで、配布用のツールをインストールします。
