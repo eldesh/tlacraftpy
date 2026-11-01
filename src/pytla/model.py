@@ -1,4 +1,5 @@
 """Declare state domains, specification expressions, actions, and fairness."""
+
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, get_type_hints
@@ -50,7 +51,11 @@ def state(cls):
     if not fields:
         raise SpecificationError("A state must declare at least one Enum field")
     for name, domain in fields.items():
-        if not isinstance(domain, type) or not issubclass(domain, Enum) or not list(domain):
+        if (
+            not isinstance(domain, type)
+            or not issubclass(domain, Enum)
+            or not list(domain)
+        ):
             raise SpecificationError(f"{name}: expected a nonempty Enum domain")
     cls.__pytla_fields__ = dict(fields)
     return cls
@@ -73,7 +78,9 @@ def leads_to(*args):
 
 
 def any_action(*actions):
-    if not actions or any(not isinstance(a, Definition) or a.kind != "action" for a in actions):
+    if not actions or any(
+        not isinstance(a, Definition) or a.kind != "action" for a in actions
+    ):
         raise SpecificationError("any_action requires at least one @action")
     return tuple(actions)
 
@@ -107,5 +114,7 @@ class Specification:
         if len({id(a) for a in self.next}) != len(self.next):
             raise SpecificationError("Duplicate next action")
         for fair in self.fairness:
-            if not isinstance(fair, WeakFairness) or not any(fair.action is a for a in self.next):
+            if not isinstance(fair, WeakFairness) or not any(
+                fair.action is a for a in self.next
+            ):
                 raise SpecificationError("Fairness must refer to an action in next")

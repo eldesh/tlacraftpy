@@ -2,5 +2,6 @@ __pycache__/
 *.egg-info/
 .pytla/
 .venv/
+.ruff_cache/
 build/
 dist/

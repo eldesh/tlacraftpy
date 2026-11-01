@@ -9,8 +9,15 @@ description = "A small Python specification DSL that exports TLA+ and runs TLC"
 readme = "README.md"
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+dev = ["ruff==0.17.3"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
 
 # [tool.pytla]
 # java = "/path/to/java"  # fallback when java is absent from PATH

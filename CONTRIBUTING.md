@@ -1,12 +1,29 @@
-# テストとCI
+# 開発手順
 
-## テスト
+## セットアップ
 
-プロジェクトのルートでパッケージをインストールします。
+プロジェクトのルートで、パッケージと開発用ツールをインストールします。
 
 ```bash
-python -m pip install -e .
+python -m pip install -e '.[dev]'
 ```
+
+## フォーマット
+
+Pythonコードの整形にはRuff 0.17.3を使います。
+設定は`pyproject.toml`の`[tool.ruff]`にあり、Python 3.11を対象に、行の長さを88文字として整形します。
+
+```bash
+ruff format .
+```
+
+整形状態の確認には、次のコマンドを使います。
+
+```bash
+ruff format --check .
+```
+
+## テスト
 
 Javaと[TLC 1.7.4のJAR](https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar)を用意し、
 `PYTLA_TLC_JAR`にJARのパスを指定して、単体テストと統合テストを実行します。
@@ -24,6 +41,8 @@ TLCがエラーを返した場合は、テストの出力にTLCのログを表�
 
 [Testsワークフロー](.github/workflows/tests.yml)は、pushとpull requestを契機に実行します。
 Actions画面のRun workflowからも起動できます。
+
+Python formattingジョブで、Ruffによるフォーマットチェックを実行します。
 
 Python 3.11・3.12・3.13・3.14、Java 21、TLC 1.7.4を使い、パッケージのインストール、
 単体テスト、TLC統合テスト、要求・応答サンプルの実行を確認します。

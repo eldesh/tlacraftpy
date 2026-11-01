@@ -43,8 +43,18 @@ Javaは`PATH`上の`java`を優先し、見つからない場合に設定ファ�
 from enum import Enum, auto
 
 from pytla import (
-    Specification, Status, action, any_action, check, initial,
-    leads_to, state, temporal, unconstrained, unchanged, weak_fairness,
+    Specification,
+    Status,
+    action,
+    any_action,
+    check,
+    initial,
+    leads_to,
+    state,
+    temporal,
+    unconstrained,
+    unchanged,
+    weak_fairness,
 )
 
 
@@ -212,4 +222,4 @@ python examples/request_response.py --export-only
 同じ出力先を再利用すると生成ファイルとログは上書きされます。
 並列に検証する場合は別々の`output_dir`を指定してください。
 
-テストとCIの実行手順は[CONTRIBUTING.md](CONTRIBUTING.md)にあります。
+フォーマット・テスト・CIの実行手順は[CONTRIBUTING.md](CONTRIBUTING.md)にあります。

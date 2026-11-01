@@ -1,4 +1,5 @@
 """Explicit Java/TLC invocation and conservative result classification."""
+
 import os
 import re
 import shutil
@@ -33,8 +34,10 @@ class Counterexample:
     stuttering: bool = False
 
     def __str__(self):
-        lines = [f"{s.number}. " + ", ".join(f"{k} = {v}" for k, v in s.values.items())
-                 for s in self.states]
+        lines = [
+            f"{s.number}. " + ", ".join(f"{k} = {v}" for k, v in s.values.items())
+            for s in self.states
+        ]
         if self.loop_start is not None:
             suffix = " (stuttering)" if self.stuttering else ""
             lines.append(f"   -> repeat from state {self.loop_start}{suffix}")
@@ -63,7 +66,9 @@ def _replace_names(text, mapping):
     replacements = {}
     for category in ("variables", "values", "actions", "properties"):
         replacements.update(mapping[category])
-    return re.sub(r"\b[A-Za-z][A-Za-z0-9_]*\b", lambda m: replacements.get(m[0], m[0]), text)
+    return re.sub(
+        r"\b[A-Za-z][A-Za-z0-9_]*\b", lambda m: replacements.get(m[0], m[0]), text
+    )
 
 
 def parse_trace(output, mapping):
@@ -77,7 +82,9 @@ def parse_trace(output, mapping):
         nonlocal current_number, values
         if current_number is not None:
             if set(values) != set(mapping["variables"].values()):
-                raise TLCError("Incomplete or unsupported TLC counterexample; see tlc.log")
+                raise TLCError(
+                    "Incomplete or unsupported TLC counterexample; see tlc.log"
+                )
             states.append(TraceState(current_number, dict(values), label))
             current_number, values = None, {}
 
@@ -123,19 +130,28 @@ def classify(output, returncode, artifacts):
         # Report the property name when exactly one property is being checked.
         name = next(iter(properties.values())) if len(properties) == 1 else None
         return CheckResult(Status.Violated, artifacts, trace, name)
-    if returncode == 0 and "Model checking completed. No error has been found." in output:
+    if (
+        returncode == 0
+        and "Model checking completed. No error has been found." in output
+    ):
         return CheckResult(Status.Passed, artifacts)
     if "TLC was interrupted" in output or "TLC execution was canceled" in output:
         return CheckResult(Status.Incomplete, artifacts, reason="TLC was interrupted")
-    raise TLCError(f"TLC did not produce a recognized verification result (exit {returncode}); "
-                   f"see {artifacts.log}")
+    raise TLCError(
+        f"TLC did not produce a recognized verification result (exit {returncode}); "
+        f"see {artifacts.log}"
+    )
 
 
 def _configuration(source):
     root = project_root(source)
     config = root / "pyproject.toml"
     try:
-        data = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
+        data = (
+            tomllib.loads(config.read_text(encoding="utf-8"))
+            if config.is_file()
+            else {}
+        )
         settings = data.get("tool", {}).get("pytla", {})
         if not isinstance(settings, dict):
             raise ConfigurationError("[tool.pytla] must be a TOML table")
@@ -157,15 +173,19 @@ def resolve_tools(source, tlc_jar=None):
     if java is None:
         configured = settings.get("java")
         if configured is None:
-            raise ConfigurationError("Java not found on PATH; set [tool.pytla].java in pyproject.toml")
+            raise ConfigurationError(
+                "Java not found on PATH; set [tool.pytla].java in pyproject.toml"
+            )
         executable = _path(configured, root, "java")
         if not executable.is_file() or not os.access(executable, os.X_OK):
             raise ConfigurationError(f"Configured Java is not executable: {executable}")
         java = str(executable)
     jar = tlc_jar if tlc_jar is not None else settings.get("tlc_jar")
     if jar is None:
-        raise ConfigurationError("TLC is not configured; pass tlc_jar= or set [tool.pytla].tlc_jar. "
-                                 "No Java or TLC is downloaded automatically.")
+        raise ConfigurationError(
+            "TLC is not configured; pass tlc_jar= or set [tool.pytla].tlc_jar. "
+            "No Java or TLC is downloaded automatically."
+        )
     # Explicit arguments are relative to the caller's cwd; config paths to project root.
     jar_path = _path(jar, Path.cwd() if tlc_jar is not None else root, "tlc_jar")
     if not jar_path.is_file():
@@ -173,25 +193,58 @@ def resolve_tools(source, tlc_jar=None):
     return java, jar_path
 
 
-def check(spec, *, properties=(), tlc_jar=None, output_dir=None, module="Model",
-          timeout=None, verbose=True):
+def check(
+    spec,
+    *,
+    properties=(),
+    tlc_jar=None,
+    output_dir=None,
+    module="Model",
+    timeout=None,
+    verbose=True,
+):
     if timeout is not None and timeout <= 0:
         raise ValueError("timeout must be positive or None")
-    artifacts = export(spec, properties=properties, output_dir=output_dir, module=module)
+    artifacts = export(
+        spec, properties=properties, output_dir=output_dir, module=module
+    )
     java, jar = resolve_tools(artifacts.compiled.source, tlc_jar)
     meta = tempfile.mkdtemp(prefix="states-", dir=artifacts.directory)
-    command = [java, "-Xmx512m", "-cp", str(jar), "tlc2.TLC", "-tool", "-workers", "1",
-               "-metadir", meta, "-config", artifacts.cfg.name, module]
+    command = [
+        java,
+        "-Xmx512m",
+        "-cp",
+        str(jar),
+        "tlc2.TLC",
+        "-tool",
+        "-workers",
+        "1",
+        "-metadir",
+        meta,
+        "-config",
+        artifacts.cfg.name,
+        module,
+    ]
     try:
-        run = subprocess.run(command, cwd=artifacts.directory, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                             errors="replace", timeout=timeout, check=False)
+        run = subprocess.run(
+            command,
+            cwd=artifacts.directory,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
     except subprocess.TimeoutExpired as exc:
         output = exc.stdout or ""
         if isinstance(output, bytes):
             output = output.decode("utf-8", errors="replace")
         artifacts.log.write_text(output, encoding="utf-8")
-        result = CheckResult(Status.Incomplete, artifacts, reason=f"timeout after {timeout}s")
+        result = CheckResult(
+            Status.Incomplete, artifacts, reason=f"timeout after {timeout}s"
+        )
     except OSError as exc:
         artifacts.log.write_text(str(exc), encoding="utf-8")
         raise TLCError(f"Could not start Java: {exc}; see {artifacts.log}") from exc

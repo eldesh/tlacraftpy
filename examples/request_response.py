@@ -1,10 +1,20 @@
 """Check request-response liveness with TLC, or export the TLA+ specification."""
+
 import argparse
 from enum import Enum, auto
 
 from pytla import (
-    Specification, Status, action, any_action, check, export, initial,
-    leads_to, state, temporal, weak_fairness,
+    Specification,
+    Status,
+    action,
+    any_action,
+    check,
+    export,
+    initial,
+    leads_to,
+    state,
+    temporal,
+    weak_fairness,
 )
 
 
@@ -46,7 +56,9 @@ def every_request_gets_response(s):
 
 def make_system(*, fair=True):
     return Specification(
-        state=State, init=init, next=any_action(request, respond, reset),
+        state=State,
+        init=init,
+        next=any_action(request, respond, reset),
         fairness=[weak_fairness(respond)] if fair else [],
     )
 
@@ -64,6 +76,12 @@ if __name__ == "__main__":
         print(artifacts.tla)
         print(artifacts.cfg)
     else:
-        result = check(system, properties=properties, tlc_jar=args.tlc_jar,
-                       module="RequestResponse")
-        raise SystemExit({Status.Passed: 0, Status.Violated: 1, Status.Incomplete: 2}[result.status])
+        result = check(
+            system,
+            properties=properties,
+            tlc_jar=args.tlc_jar,
+            module="RequestResponse",
+        )
+        raise SystemExit(
+            {Status.Passed: 0, Status.Violated: 1, Status.Incomplete: 2}[result.status]
+        )
