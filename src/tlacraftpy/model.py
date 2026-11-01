@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, get_type_hints
+from typing import Annotated, Callable, get_args, get_origin, get_type_hints
 
 
 class SpecificationError(ValueError):
@@ -54,7 +54,7 @@ class Definition:
 
     Args:
         fn: Python function whose source supplies the specification expression.
-        kind: Expression category: ``"initial"``, ``"action"``, or ``"temporal"``.
+        kind: Expression category: initial, action, invariant, or temporal.
 
     Decorators create these records. ``compile_spec`` validates the function's
     source and raises ``SpecificationError`` for invalid definitions.
@@ -138,19 +138,90 @@ def temporal(fn):
     return Definition(fn, "temporal")
 
 
-def state(cls):
-    """Declare state fields and their finite Enum domains.
+@dataclass(frozen=True)
+class MaxLen:
+    """Bound the length of a sequence-valued state field.
 
     Args:
-        cls: Class whose annotated fields each name a nonempty ``Enum`` type.
-            Each Enum member represents a distinct specification value.
+        value: Nonnegative maximum length, including zero for an empty sequence.
+
+    Raises:
+        SpecificationError: If the bound is not a nonnegative integer.
+
+    Use ``Annotated[tuple[Message, ...], MaxLen(2)]`` in an ``@state`` class.
+    """
+
+    value: int
+
+    def __post_init__(self):
+        """Validate the finite sequence bound.
+
+        Raises:
+            SpecificationError: If the bound is not a nonnegative integer.
+        """
+        if type(self.value) is not int or self.value < 0:
+            raise SpecificationError("MaxLen requires a nonnegative integer")
+
+
+@dataclass(frozen=True)
+class _SequenceDomain:
+    element: object
+    max_length: int | None = None
+
+
+def _enum_domain(domain):
+    return isinstance(domain, type) and issubclass(domain, Enum) and bool(list(domain))
+
+
+def _field_domain(annotation):
+    if _enum_domain(annotation):
+        return annotation
+    if get_origin(annotation) is Annotated:
+        base, *metadata = get_args(annotation)
+        args = get_args(base)
+        if (
+            get_origin(base) is tuple
+            and len(args) == 2
+            and args[1] is Ellipsis
+            and _enum_domain(args[0])
+            and len(metadata) == 1
+            and isinstance(metadata[0], MaxLen)
+        ):
+            return _SequenceDomain(args[0], metadata[0].value)
+    raise SpecificationError(
+        "expected a nonempty Enum or Annotated[tuple[Enum, ...], MaxLen(n)]"
+    )
+
+
+def invariant(fn):
+    """Register a state predicate that must hold in every reachable state.
+
+    Args:
+        fn: Function with one current-state parameter and a single Boolean
+            return expression, defined in a ``.py`` file.
+
+    Returns:
+        Definition: Safety predicate for the ``invariants`` verification argument.
+
+    Compilation raises ``SpecificationError`` for an invalid state predicate.
+    """
+    return Definition(fn, "invariant")
+
+
+def state(cls):
+    """Declare state fields and their finite domains.
+
+    Args:
+        cls: Class whose annotations name a nonempty Enum or a bounded sequence
+            such as ``Annotated[tuple[Message, ...], MaxLen(2)]``. Sequence
+            elements are members of the specified nonempty Enum.
 
     Returns:
         type: The class, annotated with the field domains for compilation.
 
     Raises:
         SpecificationError: If annotations cannot be resolved, there are no
-            annotated fields, or a field's domain is not a nonempty Enum.
+            annotated fields, or a field's finite domain is invalid.
 
     Examples:
         >>> @state
@@ -158,18 +229,18 @@ def state(cls):
         ...     phase: Phase
     """
     try:
-        fields = get_type_hints(cls)
+        fields = get_type_hints(cls, include_extras=True)
     except Exception as exc:
         raise SpecificationError(f"Cannot resolve state annotations: {exc}") from exc
     if not fields:
-        raise SpecificationError("A state must declare at least one Enum field")
+        raise SpecificationError(
+            "A state must declare at least one finite-domain field"
+        )
     for name, domain in fields.items():
-        if (
-            not isinstance(domain, type)
-            or not issubclass(domain, Enum)
-            or not list(domain)
-        ):
-            raise SpecificationError(f"{name}: expected a nonempty Enum domain")
+        try:
+            fields[name] = _field_domain(domain)
+        except SpecificationError as exc:
+            raise SpecificationError(f"{name}: {exc}") from exc
     cls.__tlacraftpy_fields__ = dict(fields)
     return cls
 
@@ -203,8 +274,8 @@ def unconstrained(*args):
     """Express an intentional choice from a field's entire next-state domain.
 
     In an ``@action`` return expression, this marker contributes ``TRUE`` and
-    suppresses the implicit-choice warning for the specified field. The Enum
-    domain still bounds the possible values.
+    suppresses the implicit-choice warning for the specified field. Its declared
+    finite domain bounds the possible values.
 
     Args:
         *args: Exactly one current-state field reference, such as ``s.phase``.
@@ -235,6 +306,74 @@ def leads_to(*args):
         SpecificationError: If called directly as Python code. Compilation also
             raises this exception for arguments other than two state predicates
             or for use outside a temporal property.
+    """
+    return _syntax_only(*args)
+
+
+def head(*args):
+    """Select the first element of a specification sequence.
+
+    Args:
+        *args: Exactly one sequence expression. Guard its use with a nonempty
+            sequence condition, such as ``len(s.q) > 0``.
+
+    Raises:
+        SpecificationError: On a direct Python call or invalid compilation use.
+        TLCError: During checking, if the expression selects an empty sequence.
+    """
+    return _syntax_only(*args)
+
+
+def tail(*args):
+    """Select the sequence after removing its first element.
+
+    Args:
+        *args: Exactly one sequence expression, guarded by a nonempty condition.
+
+    Raises:
+        SpecificationError: On a direct Python call or invalid compilation use.
+        TLCError: During checking, if the expression selects an empty sequence.
+    """
+    return _syntax_only(*args)
+
+
+def append(*args):
+    """Add an Enum value to the end of a specification sequence.
+
+    Args:
+        *args: Sequence expression followed by an element from its Enum domain.
+
+    Raises:
+        SpecificationError: On a direct Python call or invalid argument domains
+            during compilation.
+    """
+    return _syntax_only(*args)
+
+
+def exists(*args):
+    """Express existential quantification over a declared Enum domain.
+
+    Args:
+        *args: Enum class followed by a single-argument lambda returning a
+            Boolean predicate, for example ``exists(Message, lambda m: t.x == m)``.
+
+    Raises:
+        SpecificationError: On a direct Python call or invalid domain, binding,
+            or predicate during compilation.
+    """
+    return _syntax_only(*args)
+
+
+def forall(*args):
+    """Express universal quantification over a declared Enum domain.
+
+    Args:
+        *args: Enum class followed by a single-argument lambda returning a
+            Boolean state, action, or temporal predicate.
+
+    Raises:
+        SpecificationError: On a direct Python call or invalid domain, binding,
+            or predicate during compilation.
     """
     return _syntax_only(*args)
 
@@ -314,7 +453,7 @@ class Specification:
         TypeError: If ``next`` or ``fairness`` cannot be converted to a tuple.
 
     Compilation allows stuttering steps that preserve all fields and restricts
-    each field to its declared Enum domain.
+    each field to its declared finite domain.
     """
 
     state: type

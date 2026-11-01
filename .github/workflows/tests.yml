@@ -68,11 +68,13 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Request-response example
         run: python examples/request_response.py --tlc-jar "$TLACRAFTPY_TLC_JAR"
+      - name: FIFO example
+        run: python examples/fifo.py --tlc-jar "$TLACRAFTPY_TLC_JAR"
       - name: Save generated specification and TLC log
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: request-response-python-${{ matrix.python-version }}
+          name: examples-python-${{ matrix.python-version }}
           include-hidden-files: true
           if-no-files-found: ignore
           path: |
@@ -80,3 +82,7 @@ jobs:
             .tlacraftpy/request_response/*.cfg
             .tlacraftpy/request_response/mapping.json
             .tlacraftpy/request_response/tlc.log
+            .tlacraftpy/fifo/*.tla
+            .tlacraftpy/fifo/*.cfg
+            .tlacraftpy/fifo/mapping.json
+            .tlacraftpy/fifo/tlc.log

@@ -45,6 +45,8 @@ TLACRAFTPY_TLC_JAR=/path/to/tla2tools.jar python -m unittest discover -s tests -
 TLCの統合テストでは、要求・応答モデルについて、公平性を仮定した場合の成立と、
 仮定を外した場合の反例を確認します。
 複数のEnumを使うモデルでは、値の保持と値域全体からの選択を比較します。
+FIFOの統合テストでは、列操作・量化・不変条件と進捗を検査し、
+元のTLA+仕様とPython版の到達可能な状態・初期状態・遷移を比較します。
 TLCがエラーを返した場合は、テストの出力にTLCのログを表示します。
 
 ## GitHub Actions
@@ -55,10 +57,10 @@ Actions画面のRun workflowからも起動できます。
 Python formattingジョブで、Ruffによるフォーマットチェックを実行します。
 
 Python 3.11・3.12・3.13・3.14、Java 21、TLC 1.7.4を使い、配布物のビルド・検査とwheelのインストール、
-単体テスト、TLC統合テスト、要求・応答サンプルの実行を確認します。
+単体テスト、TLC統合テスト、要求・応答とFIFOのサンプルの実行を確認します。
 TLCのダウンロード時にはSHA-256を照合します。
 
 サンプルが生成したTLA+、TLC設定、名前の対応表、TLCログは、
-各ジョブの`request-response-python-<バージョン>`アーティファクトから取得できます。
+各ジョブの`examples-python-<バージョン>`アーティファクトから取得できます。
 
 パッケージ形式とビルド・公開の手順は[配布ドキュメント](docs/distribution.md)にあります。

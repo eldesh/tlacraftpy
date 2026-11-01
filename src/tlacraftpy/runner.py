@@ -22,7 +22,7 @@ class Status(Enum):
 
     Attributes:
         Passed: TLC completed model checking and all requested properties held.
-        Violated: TLC produced a counterexample to a requested temporal property.
+        Violated: TLC produced a counterexample to an invariant or temporal property.
         Incomplete: Verification reached its timeout or TLC reported interruption.
 
     Raises:
@@ -41,7 +41,7 @@ class TraceState:
     Args:
         number: TLC's one-based state number within the counterexample.
         values: Mapping of Python field names to display values such as
-            ``{"phase": "Phase.Requested"}``.
+            ``{"phase": "Phase.Requested", "q": "(Message.A, Message.B)"}``.
         label: TLC transition or initial-predicate label with generated names
             replaced by their Python-side equivalents where available.
     """
@@ -93,10 +93,11 @@ class CheckResult:
     Args:
         status: ``Passed``, ``Violated``, or ``Incomplete`` verification outcome.
         artifacts: Generated specification, configuration, mapping, and log paths.
-        counterexample: Trace supplied for a temporal-property violation;
+        counterexample: Trace supplied for an invariant or temporal-property violation;
             defaults to ``None``.
-        property_name: Python name of the violated property when a single
-            temporal property was checked. ``None`` means the name is unspecified.
+        property_name: Python name of the violated invariant, or the violated
+            temporal property when exactly one was checked. ``None`` means the
+            name is unspecified.
         reason: Explanation of an interruption or timeout, when applicable.
 
     ``str(result)`` formats the outcome, property name, reason, and trace for
@@ -126,11 +127,46 @@ class CheckResult:
 
 def _replace_names(text, mapping):
     replacements = {}
-    for category in ("variables", "values", "actions", "properties"):
-        replacements.update(mapping[category])
+    for category in ("variables", "values", "actions", "properties", "invariants"):
+        replacements.update(mapping.get(category, {}))
     return re.sub(
         r"\b[A-Za-z][A-Za-z0-9_]*\b", lambda m: replacements.get(m[0], m[0]), text
     )
+
+
+def _decode_value(raw, mapping):
+    tokens = re.findall(r"<<|>>|,|[A-Za-z][A-Za-z0-9_]*", raw)
+    if "".join(tokens) != re.sub(r"\s+", "", raw):
+        raise TLCError("Unsupported value in TLC counterexample; see tlc.log")
+
+    def parse(index):
+        if index >= len(tokens):
+            raise TLCError("Truncated sequence in TLC counterexample; see tlc.log")
+        token = tokens[index]
+        if token == "<<":
+            values = []
+            index += 1
+            if index < len(tokens) and tokens[index] == ">>":
+                return "()", index + 1
+            while True:
+                value, index = parse(index)
+                values.append(value)
+                if index < len(tokens) and tokens[index] == ">>":
+                    suffix = "," if len(values) == 1 else ""
+                    return "(" + ", ".join(values) + suffix + ")", index + 1
+                if index >= len(tokens) or tokens[index] != ",":
+                    raise TLCError(
+                        "Malformed sequence in TLC counterexample; see tlc.log"
+                    )
+                index += 1
+        if token not in mapping["values"]:
+            raise TLCError("Unknown value in TLC counterexample; see tlc.log")
+        return mapping["values"][token], index + 1
+
+    value, end = parse(0)
+    if end != len(tokens):
+        raise TLCError("Trailing value in TLC counterexample; see tlc.log")
+    return value
 
 
 def parse_trace(output, mapping):
@@ -153,19 +189,31 @@ def parse_trace(output, mapping):
     states = []
     current_number, label, values = None, "", {}
     loop_start, stuttering = None, False
+    active_field = None
 
     def flush():
-        nonlocal current_number, values
+        nonlocal current_number, values, active_field
         if current_number is not None:
             if set(values) != set(mapping["variables"].values()):
                 raise TLCError(
                     "Incomplete or unsupported TLC counterexample; see tlc.log"
                 )
-            states.append(TraceState(current_number, dict(values), label))
+            states.append(
+                TraceState(
+                    current_number,
+                    {name: _decode_value(raw, mapping) for name, raw in values.items()},
+                    label,
+                )
+            )
             current_number, values = None, {}
+            active_field = None
 
     for line in lines:
         stripped = line.strip()
+        if re.match(r"^Invariant I\d+ is violated by the initial state:", stripped):
+            flush()
+            current_number, label = 1, "<Initial predicate>"
+            continue
         back = re.match(r"^(?:\d+:\s*)?Back to state\s*:?\s*(\d+)", stripped, re.I)
         if back:
             flush()
@@ -182,12 +230,17 @@ def parse_trace(output, mapping):
                 current_number = int(header[1])
                 label = _replace_names(header[2], mapping)
             continue
-        assignment = re.match(r"^(?:/\\\s*)?(v\d+)\s*=\s*(\S+)\s*$", stripped)
+        assignment = re.match(r"^(?:/\\\s*)?(v\d+)\s*=\s*(.+?)\s*$", stripped)
         if assignment and current_number is not None:
             var, value = assignment.groups()
-            if var not in mapping["variables"] or value not in mapping["values"]:
+            if var not in mapping["variables"]:
                 raise TLCError("Unknown value in TLC counterexample; see tlc.log")
-            values[mapping["variables"][var]] = mapping["values"][value]
+            active_field = mapping["variables"][var]
+            values[active_field] = value
+        elif current_number is not None and active_field is not None:
+            raw = values[active_field]
+            if raw.count("<<") > raw.count(">>"):
+                values[active_field] += " " + stripped
     flush()
     if not states or [s.number for s in states] != list(range(1, len(states) + 1)):
         raise TLCError("Missing or malformed TLC counterexample; see tlc.log")
@@ -205,14 +258,25 @@ def classify(output, returncode, artifacts):
         artifacts: Generated files and name mappings for this invocation.
 
     Returns:
-        CheckResult: Passed for successful completion, Violated for a temporal
-        counterexample, or Incomplete for a reported interruption.
+        CheckResult: Passed for successful completion, Violated for an invariant
+        or temporal counterexample, or Incomplete for a reported interruption.
 
     Raises:
         TLCError: If TLC reports an execution error, its result is unrecognized,
             or a temporal counterexample cannot be decoded with a loop.
     """
     violated = "Temporal properties were violated" in output
+    invariant_match = re.search(r"\bInvariant (I\d+) is violated\b", output)
+    if invariant_match:
+        name = artifacts.compiled.mapping.get("invariants", {}).get(invariant_match[1])
+        if name is None:
+            raise TLCError("Unknown invariant in TLC output; see tlc.log")
+        return CheckResult(
+            Status.Violated,
+            artifacts,
+            parse_trace(output, artifacts.compiled.mapping),
+            name,
+        )
     if violated:
         trace = parse_trace(output, artifacts.compiled.mapping)
         if trace.loop_start is None:
@@ -305,6 +369,7 @@ def check(
     spec,
     *,
     properties=(),
+    invariants=(),
     tlc_jar=None,
     output_dir=None,
     module="Model",
@@ -316,6 +381,8 @@ def check(
     Args:
         spec: ``Specification`` defining the finite-state model to verify.
         properties: Iterable of ``@temporal`` definitions to check.
+        invariants: Iterable of ``@invariant`` state predicates to check in all
+            reachable states. Violations return a finite counterexample.
         tlc_jar: TLC JAR path overriding ``[tool.tlacraftpy].tlc_jar``. Explicit
             relative paths use the working directory; configuration paths use
             the project root. Defaults to the project configuration.
@@ -332,11 +399,12 @@ def check(
     Returns:
         CheckResult: Verification status, generated file paths, and any
         counterexample. Timeouts and reported interruptions produce Incomplete;
-        temporal-property violations produce Violated with a repeating trace.
+        invariant violations produce a finite trace and temporal-property
+        violations produce a repeating trace, both with status Violated.
         Existing generated files and the TLC log at the output paths are replaced.
 
     Raises:
-        SpecificationError: If the specification or a temporal property fails
+        SpecificationError: If the specification, invariant, or temporal property fails
             source compilation, or the module name is invalid.
         ConfigurationError: If Java, the TLC JAR, or project settings are invalid.
         TLCError: If Java cannot start, TLC reports an execution error, or its
@@ -355,7 +423,11 @@ def check(
     if timeout is not None and timeout <= 0:
         raise ValueError("timeout must be positive or None")
     artifacts = export(
-        spec, properties=properties, output_dir=output_dir, module=module
+        spec,
+        properties=properties,
+        invariants=invariants,
+        output_dir=output_dir,
+        module=module,
     )
     java, jar = resolve_tools(artifacts.compiled.source, tlc_jar)
     meta = tempfile.mkdtemp(prefix="states-", dir=artifacts.directory)

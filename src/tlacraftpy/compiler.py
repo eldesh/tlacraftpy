@@ -15,10 +15,37 @@ from .model import (
     Specification,
     SpecificationError,
     UnconstrainedWarning,
+    _SequenceDomain,
+    append,
+    exists,
+    forall,
+    head,
     leads_to,
+    tail,
     unchanged,
     unconstrained,
 )
+
+
+def _compatible(left, right):
+    if left is right:
+        return True
+    return (
+        isinstance(left, _SequenceDomain)
+        and isinstance(right, _SequenceDomain)
+        and (
+            left.element is None
+            or right.element is None
+            or left.element is right.element
+        )
+    )
+
+
+def _domain_text(domain, atoms):
+    if isinstance(domain, _SequenceDomain):
+        elements = _domain_text(domain.element, atoms)
+        return f"UNION {{[1..n -> {elements}] : n \\in 0..{domain.max_length}}}"
+    return "{" + ", ".join(atoms[domain, m.name] for m in domain) + "}"
 
 
 @dataclass(frozen=True)
@@ -27,7 +54,7 @@ class Expression:
 
     Args:
         text: TLA+ expression text.
-        type: Python ``bool`` or the Enum class identifying the expression domain.
+        type: Boolean, integer, Enum, or sequence domain of the expression.
         level: Dependency level: constant (0), state (1), action (2), temporal (3).
         covered: Names of fields explicitly addressed in the next state.
     """
@@ -43,7 +70,7 @@ class Parser:
 
     Args:
         definition: Registered function and its expression category.
-        fields: Mapping from state-field names to Enum classes.
+        fields: Mapping from state-field names to finite domains.
         variables: Mapping from state-field names to generated TLA+ variables.
         atoms: Mapping from ``(Enum class, canonical member name)`` to model values.
 
@@ -57,7 +84,7 @@ class Parser:
 
         Args:
             definition: Registered function and its expression category.
-            fields: State-field names mapped to their Enum domains.
+            fields: State-field names mapped to their finite domains.
             variables: State-field names mapped to generated TLA+ variables.
             atoms: Enum class and member-name pairs mapped to model values.
 
@@ -102,11 +129,21 @@ class Parser:
             )
         self.params = [a.arg for a in args.posonlyargs + args.args]
         self.env = dict(fn.__globals__)
+        self.builtins = fn.__builtins__
+        self.bindings = {}
+        self.binding_count = 0
         try:
             self.env.update(inspect.getclosurevars(fn).nonlocals)
         except TypeError:
             pass
         body = self.node.body
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            body = body[1:]
         if (
             len(body) != 1
             or not isinstance(body[0], ast.Return)
@@ -181,6 +218,8 @@ class Parser:
         """
         expr = self.expr(self.body)
         self.boolean(expr, self.body)
+        if self.definition.kind == "invariant" and expr.level > 1:
+            self.fail(self.body, "@invariant requires a state predicate")
         if self.definition.kind == "temporal" and expr.level != 3:
             self.fail(self.body, "@temporal requires a temporal expression (leads_to)")
         return expr
@@ -199,6 +238,43 @@ class Parser:
         """
         if isinstance(node, ast.Constant) and type(node.value) is bool:
             return Expression("TRUE" if node.value else "FALSE", bool)
+        if isinstance(node, ast.Constant) and type(node.value) is int:
+            return Expression(str(node.value), int)
+        if isinstance(node, ast.Name):
+            if node.id in self.bindings:
+                return self.bindings[node.id]
+            if node.id not in self.params and type(self.env.get(node.id)) is int:
+                return Expression(str(self.env[node.id]), int)
+            self.fail(node, "expected a bound name or an integer constant")
+        if isinstance(node, ast.Tuple):
+            values = [self.expr(value) for value in node.elts]
+            element = values[0].type if values else None
+            if values and (
+                not isinstance(element, type)
+                or not issubclass(element, Enum)
+                or any(value.type is not element for value in values)
+            ):
+                self.fail(node, "sequence literals require members of one Enum")
+            return Expression(
+                "<<" + ", ".join(value.text for value in values) + ">>",
+                _SequenceDomain(element),
+                max((value.level for value in values), default=0),
+                frozenset().union(*(value.covered for value in values)),
+            )
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left, right = self.expr(node.left), self.expr(node.right)
+            if not (
+                isinstance(left.type, _SequenceDomain)
+                and isinstance(right.type, _SequenceDomain)
+                and _compatible(left.type, right.type)
+            ):
+                self.fail(node, "+ requires sequences of the same Enum domain")
+            return Expression(
+                f"({left.text} \\o {right.text})",
+                _SequenceDomain(left.type.element or right.type.element),
+                max(left.level, right.level),
+                left.covered | right.covered,
+            )
         if isinstance(node, ast.Attribute):
             if isinstance(node.value, ast.Name) and node.value.id in self.params:
                 name, index = self.field(node)
@@ -219,13 +295,18 @@ class Parser:
             values = [self.expr(n) for n in [node.left, *node.comparators]]
             pieces = []
             for left, op, right in zip(values, node.ops, values[1:]):
-                if left.type is not right.type:
+                if not _compatible(left.type, right.type):
                     self.fail(node, "comparison requires values from the same domain")
-                if not isinstance(op, (ast.Eq, ast.NotEq)):
-                    self.fail(node, "only == and != comparisons are supported")
+                operators = {ast.Eq: "=", ast.NotEq: "#"}
+                if left.type is int:
+                    operators.update(
+                        {ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">="}
+                    )
+                if type(op) not in operators:
+                    self.fail(node, "ordering comparisons require integer expressions")
                 if max(left.level, right.level) == 3:
                     self.fail(node, "temporal expressions cannot be compared")
-                operator = "=" if isinstance(op, ast.Eq) else "#"
+                operator = operators[type(op)]
                 pieces.append(f"({left.text} {operator} {right.text})")
             return Expression(
                 "(" + " /\\ ".join(pieces) + ")",
@@ -257,13 +338,105 @@ class Parser:
             return Expression(f"~({value.text})", bool, value.level, value.covered)
         if isinstance(node, ast.Call):
             operator = (
-                self.env.get(node.func.id)
-                if isinstance(node.func, ast.Name) and node.func.id not in self.params
+                self.env.get(node.func.id, self.builtins.get(node.func.id))
+                if isinstance(node.func, ast.Name)
+                and node.func.id not in self.params
+                and node.func.id not in self.bindings
                 else None
             )
             if node.keywords:
                 self.fail(
                     node, "keyword arguments are not supported in DSL expressions"
+                )
+            if operator is exists or operator is forall:
+                if len(node.args) != 2 or not isinstance(node.args[0], ast.Name):
+                    self.fail(node, "quantification requires an Enum and a lambda")
+                domain_name, predicate = node.args
+                if domain_name.id in self.params or domain_name.id in self.bindings:
+                    self.fail(
+                        domain_name, "quantifier domain must name a global Enum class"
+                    )
+                domain = self.env.get(domain_name.id)
+                if (
+                    not isinstance(domain, type)
+                    or not issubclass(domain, Enum)
+                    or not list(domain)
+                    or any((domain, m.name) not in self.atoms for m in domain)
+                ):
+                    self.fail(
+                        domain_name, "expected an Enum declared in a state domain"
+                    )
+                if not isinstance(predicate, ast.Lambda):
+                    self.fail(predicate, "expected a single-argument lambda")
+                args = predicate.args
+                if (
+                    len(args.posonlyargs) + len(args.args) != 1
+                    or args.vararg
+                    or args.kwarg
+                    or args.kwonlyargs
+                    or args.defaults
+                ):
+                    self.fail(predicate, "expected a single-argument lambda")
+                name = (args.posonlyargs + args.args)[0].arg
+                if name in self.params:
+                    self.fail(predicate, "a quantifier cannot shadow a state parameter")
+                symbol = f"b{self.binding_count}"
+                self.binding_count += 1
+                previous = self.bindings.copy()
+                self.bindings[name] = Expression(symbol, domain)
+                try:
+                    value = self.expr(predicate.body)
+                    self.boolean(value, predicate.body)
+                finally:
+                    self.bindings = previous
+                quantifier = "\\E" if operator is exists else "\\A"
+                return Expression(
+                    f"({quantifier} {symbol} \\in {_domain_text(domain, self.atoms)} : {value.text})",
+                    bool,
+                    value.level,
+                    value.covered,
+                )
+            if (
+                operator is len
+                or operator is head
+                or operator is tail
+                or operator is append
+            ):
+                count = 2 if operator is append else 1
+                if len(node.args) != count:
+                    self.fail(node, f"sequence operation requires {count} argument(s)")
+                values = [self.expr(arg) for arg in node.args]
+                sequence = values[0]
+                if not isinstance(sequence.type, _SequenceDomain):
+                    self.fail(node, "expected a sequence expression")
+                if operator is append:
+                    element = values[1]
+                    if not isinstance(element.type, type) or not issubclass(
+                        element.type, Enum
+                    ):
+                        self.fail(node, "Append requires an Enum element")
+                    if (
+                        sequence.type.element is not None
+                        and sequence.type.element is not element.type
+                    ):
+                        self.fail(node, "Append element belongs to a different domain")
+                    result_type = _SequenceDomain(element.type)
+                elif operator is len:
+                    result_type = int
+                elif operator is head:
+                    if sequence.type.element is None:
+                        self.fail(node, "Head requires a typed sequence expression")
+                    result_type = sequence.type.element
+                else:
+                    result_type = sequence.type
+                name = {len: "Len", head: "Head", tail: "Tail", append: "Append"}[
+                    operator
+                ]
+                return Expression(
+                    f"{name}({', '.join(value.text for value in values)})",
+                    result_type,
+                    max(value.level for value in values),
+                    frozenset().union(*(value.covered for value in values)),
                 )
             if operator is leads_to:
                 if self.definition.kind != "temporal" or len(node.args) != 2:
@@ -303,7 +476,7 @@ class Compiled:
         tla: Complete TLA+ module text.
         cfg: TLC configuration selecting the specification and properties.
         mapping: Generated-to-Python name mappings, grouped under ``variables``,
-            ``values``, ``actions``, and ``properties``.
+            ``values``, ``actions``, ``properties``, and ``invariants``.
         source: Absolute path of the initial predicate's Python source file.
     """
 
@@ -335,13 +508,15 @@ class Artifacts:
     compiled: Compiled
 
 
-def compile_spec(spec: Specification, *, properties=(), module="Model"):
+def compile_spec(spec: Specification, *, properties=(), invariants=(), module="Model"):
     """Translate a specification and temporal properties into TLA+ text.
 
     Args:
         spec: Validated ``Specification`` defining the state and transition system.
         properties: Iterable of ``@temporal`` definitions to verify. Defaults to
             an empty iterable.
+        invariants: Iterable of ``@invariant`` state predicates to verify in every
+            reachable state. Defaults to an empty iterable.
         module: TLA+ module name; an ASCII letter followed by ASCII letters,
             digits, or underscores. Defaults to ``"Model"``.
 
@@ -359,11 +534,19 @@ def compile_spec(spec: Specification, *, properties=(), module="Model"):
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", module):
         raise SpecificationError("module must be an ASCII TLA+ identifier")
     properties = tuple(properties)
+    invariants = tuple(invariants)
     if any(not isinstance(p, Definition) or p.kind != "temporal" for p in properties):
         raise SpecificationError("properties must be @temporal definitions")
+    if any(not isinstance(p, Definition) or p.kind != "invariant" for p in invariants):
+        raise SpecificationError("invariants must be @invariant definitions")
     fields = spec.state.__tlacraftpy_fields__
     variables = {name: f"v{i}" for i, name in enumerate(fields)}
-    domains = list(dict.fromkeys(fields.values()))
+    domains = list(
+        dict.fromkeys(
+            domain.element if isinstance(domain, _SequenceDomain) else domain
+            for domain in fields.values()
+        )
+    )
     atoms = {
         (domain, member.name): f"E{i}M{j}"
         for i, domain in enumerate(domains)
@@ -388,16 +571,18 @@ def compile_spec(spec: Specification, *, properties=(), module="Model"):
             )
         action_exprs.append(expression)
     prop_exprs = [Parser(p, fields, variables, atoms).parse() for p in properties]
+    inv_exprs = [Parser(p, fields, variables, atoms).parse() for p in invariants]
     type_ok = " /\\ ".join(
-        f"({variables[name]} \\in {{{', '.join(atoms[domain, m.name] for m in domain)}}})"
+        f"({variables[name]} \\in {_domain_text(domain, atoms)})"
         for name, domain in fields.items()
     )
     next_domains = " /\\ ".join(
-        f"({variables[name]}' \\in {{{', '.join(atoms[domain, m.name] for m in domain)}}})"
+        f"({variables[name]}' \\in {_domain_text(domain, atoms)})"
         for name, domain in fields.items()
     )
     lines = [
         f"---- MODULE {module} ----",
+        "EXTENDS Integers, Sequences",
         "",
         "CONSTANTS " + ", ".join(atoms.values()),
         "VARIABLES " + ", ".join(variables.values()),
@@ -425,12 +610,19 @@ def compile_spec(spec: Specification, *, properties=(), module="Model"):
         lines.extend(
             [f"\\* Python property: {prop.name}", f"P{i} == {expression.text}", ""]
         )
+    for i, (inv, expression) in enumerate(zip(invariants, inv_exprs)):
+        lines.extend(
+            [f"\\* Python invariant: {inv.name}", f"I{i} == {expression.text}", ""]
+        )
     lines.append("====")
     cfg = ["SPECIFICATION Spec", "CHECK_DEADLOCK FALSE", "CONSTANTS"]
     cfg.extend(f"    {atom} = {atom}" for atom in atoms.values())
     if properties:
         cfg.append("PROPERTIES")
         cfg.extend(f"    P{i}" for i in range(len(properties)))
+    if invariants:
+        cfg.append("INVARIANTS")
+        cfg.extend(f"    I{i}" for i in range(len(invariants)))
     mapping = {
         "variables": {symbol: name for name, symbol in variables.items()},
         "values": {
@@ -439,6 +631,7 @@ def compile_spec(spec: Specification, *, properties=(), module="Model"):
         },
         "actions": {f"A{i}": a.name for i, a in enumerate(spec.next)},
         "properties": {f"P{i}": p.name for i, p in enumerate(properties)},
+        "invariants": {f"I{i}": p.name for i, p in enumerate(invariants)},
     }
     return Compiled(
         module,
@@ -465,12 +658,13 @@ def project_root(source: Path):
     return source.parent
 
 
-def export(spec, *, properties=(), output_dir=None, module="Model"):
+def export(spec, *, properties=(), invariants=(), output_dir=None, module="Model"):
     """Write a specification's TLA+ module, TLC configuration, and name mappings.
 
     Args:
         spec: ``Specification`` to translate.
         properties: Iterable of ``@temporal`` definitions to verify.
+        invariants: Iterable of ``@invariant`` state predicates to verify.
         output_dir: Output directory, as a string or path-like object. Relative
             paths use the current working directory. By default, uses
             ``<project root>/.tlacraftpy/<source stem>/``; the project root is
@@ -490,7 +684,9 @@ def export(spec, *, properties=(), output_dir=None, module="Model"):
     Warns:
         UnconstrainedWarning: An action may leave a next-state field implicit.
     """
-    compiled = compile_spec(spec, properties=properties, module=module)
+    compiled = compile_spec(
+        spec, properties=properties, invariants=invariants, module=module
+    )
     directory = (
         Path(output_dir)
         if output_dir is not None
