@@ -1,0 +1,60 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Python ${{ matrix.python-version }} / TLC
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install tlacraftpy
+        run: python -m pip install -e .
+      - name: Download TLC 1.7.4
+        shell: bash
+        env:
+          PYTLA_TLC_JAR: ${{ runner.temp }}/tla2tools.jar
+        run: |
+          curl --fail --location --retry 3 --connect-timeout 10 --max-time 120 \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar \
+            --output "$PYTLA_TLC_JAR"
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $PYTLA_TLC_JAR" | sha256sum --check
+          echo "PYTLA_TLC_JAR=$PYTLA_TLC_JAR" >> "$GITHUB_ENV"
+      - name: Unit and TLC integration tests
+        run: python -m unittest discover -s tests -v
+      - name: Request-response example
+        run: python examples/request_response.py --tlc-jar "$PYTLA_TLC_JAR"
+      - name: Save generated specification and TLC log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: request-response-python-${{ matrix.python-version }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          path: |
+            .pytla/request_response/*.tla
+            .pytla/request_response/*.cfg
+            .pytla/request_response/mapping.json
+            .pytla/request_response/tlc.log

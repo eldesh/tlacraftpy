@@ -120,6 +120,11 @@ def logical_property(s):
     return not leads_to(s.phase != Phase.Idle, s.phase == Phase.Responded)
 
 
+@temporal
+def flag_returns_off(s):
+    return leads_to(s.flag == Flag.On, s.flag == Flag.Off)
+
+
 def two_spec(a):
     return Specification(TwoFields, two_init, any_action(a))
 
@@ -152,7 +157,7 @@ class CompilerTests(unittest.TestCase):
         self.assertIn("WF_vars(A1)", compiled.tla)
         self.assertIn("[][Next]_vars", compiled.tla)
         self.assertIn("~>", compiled.tla)
-        self.assertIn("TypeOK'", compiled.tla)
+        self.assertIn("v0' \\in {E0M0, E0M1, E0M2}", compiled.tla)
         self.assertIn("PROPERTIES\n    P0", compiled.cfg)
         self.assertIn("E0M1 = E0M1", compiled.cfg)
         self.assertEqual(compiled.mapping["values"]["E0M1"], "Phase.Requested")
@@ -166,7 +171,7 @@ class CompilerTests(unittest.TestCase):
         self.assertIs(caught[0].category, UnconstrainedWarning)
         self.assertIn("'flag'", str(caught[0].message))
         self.assertIn("v1 \\in {E1M0, E1M1}", compiled.tla)
-        self.assertIn("A0 == TypeOK'", compiled.tla)
+        self.assertIn("v1' \\in {E1M0, E1M1}", compiled.tla)
 
     def test_frames_and_explicit_unconstrained(self):
         for a, expected in [(keep, "UNCHANGED v1"), (allow, "(TRUE)")]:
@@ -326,16 +331,30 @@ class RunnerTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("PYTLA_TLC_JAR"), "set PYTLA_TLC_JAR to run real TLC tests")
 class TLCIntegrationTests(unittest.TestCase):
+    def run_tlc(self, system, prop, directory):
+        try:
+            return check(system, properties=[prop], tlc_jar=os.environ["PYTLA_TLC_JAR"],
+                         output_dir=directory, timeout=30, verbose=False)
+        except TLCError as exc:
+            log = Path(directory) / "tlc.log"
+            self.fail(f"{exc}\n{log.read_text() if log.exists() else ''}")
+
     def test_fairness_changes_liveness_result(self):
-        jar = os.environ["PYTLA_TLC_JAR"]
         for fair, expected in ((True, Status.Passed), (False, Status.Violated)):
             with self.subTest(fair=fair), tempfile.TemporaryDirectory() as directory:
-                result = check(make_system(fair=fair), properties=[every_request_gets_response],
-                               tlc_jar=jar, output_dir=directory, timeout=30, verbose=False)
+                result = self.run_tlc(make_system(fair=fair), every_request_gets_response, directory)
                 self.assertEqual(result.status, expected)
                 if not fair:
                     self.assertIsNotNone(result.counterexample.loop_start)
                     self.assertEqual(result.counterexample.states[-1].values["phase"], "Phase.Requested")
+
+    def test_frame_conditions_with_multiple_enum_domains(self):
+        for a, expected in ((keep, Status.Passed), (allow, Status.Violated)):
+            with self.subTest(action=a.name), tempfile.TemporaryDirectory() as directory:
+                result = self.run_tlc(two_spec(a), flag_returns_off, directory)
+                self.assertEqual(result.status, expected)
+                if a is allow:
+                    self.assertEqual(result.counterexample.states[-1].values["flag"], "Flag.On")
 
 
 if __name__ == "__main__":

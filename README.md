@@ -211,3 +211,5 @@ python examples/request_response.py --export-only
 ディレクトリの`.pytla/<ソース名>/`です。見つからなければソースのあるディレクトリを基準にします。
 同じ出力先を再利用すると生成ファイルとログは上書きされます。
 並列に検証する場合は別々の`output_dir`を指定してください。
+
+テストとCIの実行手順は[CONTRIBUTING.md](CONTRIBUTING.md)にあります。

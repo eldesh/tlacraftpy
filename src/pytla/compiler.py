@@ -209,13 +209,17 @@ def compile_spec(spec: Specification, *, properties=(), module="Model"):
         f"({variables[name]} \\in {{{', '.join(atoms[domain, m.name] for m in domain)}}})"
         for name, domain in fields.items()
     )
+    next_domains = " /\\ ".join(
+        f"({variables[name]}' \\in {{{', '.join(atoms[domain, m.name] for m in domain)}}})"
+        for name, domain in fields.items()
+    )
     lines = [f"---- MODULE {module} ----", "", "CONSTANTS " + ", ".join(atoms.values()),
              "VARIABLES " + ", ".join(variables.values()), "",
              "vars == <<" + ", ".join(variables.values()) + ">>",
              f"TypeOK == {type_ok}", f"Init == TypeOK /\\ {init.text}", ""]
     for i, (definition, expression) in enumerate(zip(spec.next, action_exprs)):
         lines.extend([f"\\* Python action: {definition.name}",
-                      f"A{i} == TypeOK' /\\ {expression.text}", ""])
+                      f"A{i} == {next_domains} /\\ {expression.text}", ""])
     lines.append("Next == " + " \\/ ".join(f"A{i}" for i in range(len(spec.next))))
     spec_text = "Init /\\ [][Next]_vars"
     for fair in spec.fairness:
