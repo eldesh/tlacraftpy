@@ -23,6 +23,15 @@ from .model import (
 
 @dataclass(frozen=True)
 class Expression:
+    """Store a translated expression and its compilation metadata.
+
+    Args:
+        text: TLA+ expression text.
+        type: Python ``bool`` or the Enum class identifying the expression domain.
+        level: Dependency level: constant (0), state (1), action (2), temporal (3).
+        covered: Names of fields explicitly addressed in the next state.
+    """
+
     text: str
     type: object
     level: int = 0  # constant=0, state=1, action=2, temporal=3
@@ -30,7 +39,31 @@ class Expression:
 
 
 class Parser:
+    """Translate a registered function's source into a typed expression.
+
+    Args:
+        definition: Registered function and its expression category.
+        fields: Mapping from state-field names to Enum classes.
+        variables: Mapping from state-field names to generated TLA+ variables.
+        atoms: Mapping from ``(Enum class, canonical member name)`` to model values.
+
+    Raises:
+        SpecificationError: If source retrieval, function parameters, or the
+            single-return-expression structure cannot be resolved.
+    """
+
     def __init__(self, definition, fields, variables, atoms):
+        """Load source and prepare the parameter and Enum name bindings.
+
+        Args:
+            definition: Registered function and its expression category.
+            fields: State-field names mapped to their Enum domains.
+            variables: State-field names mapped to generated TLA+ variables.
+            atoms: Enum class and member-name pairs mapped to model values.
+
+        Raises:
+            SpecificationError: If source retrieval or function structure fails.
+        """
         self.definition = definition
         self.fields = fields
         self.variables = variables
@@ -83,12 +116,33 @@ class Parser:
         self.body = body[0].value
 
     def fail(self, node, message):
+        """Report a compilation error at a source node.
+
+        Args:
+            node: AST node identifying the source location.
+            message: Explanation to include with the filename and function name.
+
+        Raises:
+            SpecificationError: Always, with source context attached.
+        """
         line = self.start + getattr(node, "lineno", 1) - 1
         raise SpecificationError(
             f"{self.filename}:{line}: {self.definition.name}: {message}"
         )
 
     def field(self, node, current_only=False):
+        """Resolve a state-field reference and its state parameter.
+
+        Args:
+            node: AST attribute expression for a declared state field.
+            current_only: Require the reference to use the current-state parameter.
+
+        Returns:
+            tuple[str, int]: Field name and parameter index (current 0, next 1).
+
+        Raises:
+            SpecificationError: If the field or parameter is invalid.
+        """
         if (
             not isinstance(node, ast.Attribute)
             or not isinstance(node.value, ast.Name)
@@ -103,10 +157,28 @@ class Parser:
         return node.attr, index
 
     def boolean(self, expr, node):
+        """Require an expression to have the Boolean domain.
+
+        Args:
+            expr: Translated expression whose type is checked.
+            node: Source node to identify in a diagnostic.
+
+        Raises:
+            SpecificationError: If ``expr.type`` is not ``bool``.
+        """
         if expr.type is not bool:
             self.fail(node, "expected a Boolean expression")
 
     def parse(self):
+        """Translate and validate the registered function's return expression.
+
+        Returns:
+            Expression: Boolean expression with its dependency level and coverage.
+
+        Raises:
+            SpecificationError: If the return value or its dependency level is
+                invalid for the registered expression category.
+        """
         expr = self.expr(self.body)
         self.boolean(expr, self.body)
         if self.definition.kind == "temporal" and expr.level != 3:
@@ -114,6 +186,17 @@ class Parser:
         return expr
 
     def expr(self, node):
+        """Translate an expression node into TLA+ syntax.
+
+        Args:
+            node: AST node for an Enum value, state field, or logical expression.
+
+        Returns:
+            Expression: TLA+ text, domain, dependency level, and field coverage.
+
+        Raises:
+            SpecificationError: If syntax, domains, or DSL operator use are invalid.
+        """
         if isinstance(node, ast.Constant) and type(node.value) is bool:
             return Expression("TRUE" if node.value else "FALSE", bool)
         if isinstance(node, ast.Attribute):
@@ -213,6 +296,17 @@ class Parser:
 
 @dataclass(frozen=True)
 class Compiled:
+    """Hold a specification translated into TLA+ and TLC configuration text.
+
+    Args:
+        module: TLA+ module name used for the generated specification.
+        tla: Complete TLA+ module text.
+        cfg: TLC configuration selecting the specification and properties.
+        mapping: Generated-to-Python name mappings, grouped under ``variables``,
+            ``values``, ``actions``, and ``properties``.
+        source: Absolute path of the initial predicate's Python source file.
+    """
+
     module: str
     tla: str
     cfg: str
@@ -222,6 +316,17 @@ class Compiled:
 
 @dataclass(frozen=True)
 class Artifacts:
+    """Locate generated files and retain their compiled specification.
+
+    Args:
+        directory: Absolute output directory containing generated files.
+        tla: Path to the TLA+ module.
+        cfg: Path to the TLC configuration.
+        mapping: Path to the generated-to-Python name mapping JSON file.
+        log: Destination for the TLC execution log, written when TLC is invoked.
+        compiled: Translated text and metadata used to create the files.
+    """
+
     directory: Path
     tla: Path
     cfg: Path
@@ -231,6 +336,26 @@ class Artifacts:
 
 
 def compile_spec(spec: Specification, *, properties=(), module="Model"):
+    """Translate a specification and temporal properties into TLA+ text.
+
+    Args:
+        spec: Validated ``Specification`` defining the state and transition system.
+        properties: Iterable of ``@temporal`` definitions to verify. Defaults to
+            an empty iterable.
+        module: TLA+ module name; an ASCII letter followed by ASCII letters,
+            digits, or underscores. Defaults to ``"Model"``.
+
+    Returns:
+        Compiled: TLA+ text, TLC configuration text, name mappings, and source path.
+
+    Raises:
+        SpecificationError: If the module name, property category, function
+            source, expression syntax, or expression domains are invalid.
+
+    Warns:
+        UnconstrainedWarning: An action may leave a next-state field implicit.
+            Use ``unchanged`` or ``unconstrained`` to document its intended choice.
+    """
     if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", module):
         raise SpecificationError("module must be an ASCII TLA+ identifier")
     properties = tuple(properties)
@@ -325,6 +450,15 @@ def compile_spec(spec: Specification, *, properties=(), module="Model"):
 
 
 def project_root(source: Path):
+    """Find the project directory associated with a specification source file.
+
+    Args:
+        source: Source-file path from which to start searching parent directories.
+
+    Returns:
+        Path: Nearest ancestor containing ``pyproject.toml``, or the source file's
+        parent directory as the fallback.
+    """
     for directory in source.parent, *source.parent.parents:
         if (directory / "pyproject.toml").is_file():
             return directory
@@ -332,6 +466,30 @@ def project_root(source: Path):
 
 
 def export(spec, *, properties=(), output_dir=None, module="Model"):
+    """Write a specification's TLA+ module, TLC configuration, and name mappings.
+
+    Args:
+        spec: ``Specification`` to translate.
+        properties: Iterable of ``@temporal`` definitions to verify.
+        output_dir: Output directory, as a string or path-like object. Relative
+            paths use the current working directory. By default, uses
+            ``<project root>/.tlacraftpy/<source stem>/``; the project root is
+            located from the initial predicate's source file.
+        module: TLA+ module name, also used as the stem of the ``.tla`` and
+            ``.cfg`` filenames. Defaults to ``"Model"``.
+
+    Returns:
+        Artifacts: Paths to the generated files and compiled specification.
+        Existing files at these paths are replaced. ``log`` identifies the
+        destination for a subsequent TLC invocation.
+
+    Raises:
+        SpecificationError: If source compilation fails.
+        OSError: If the output directory or generated files cannot be written.
+
+    Warns:
+        UnconstrainedWarning: An action may leave a next-state field implicit.
+    """
     compiled = compile_spec(spec, properties=properties, module=module)
     directory = (
         Path(output_dir)

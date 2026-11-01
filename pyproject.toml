@@ -40,6 +40,9 @@ namespaces = false
 target-version = "py311"
 line-length = 88
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
 # [tool.tlacraftpy]
 # java = "/path/to/java"  # fallback when java is absent from PATH
 # tlc_jar = "/path/to/tla2tools.jar"

@@ -23,6 +23,17 @@ ruff format .
 ruff format --check .
 ```
 
+## APIドキュメント
+
+公開APIと型のdocstringはGoogle形式で記述します。
+概要、引数・属性の意味、戻り値、例外の記述規則は[APIドキュメント](docs/api.md)にあります。
+
+Google形式のdocstringチェックは、次のコマンドで実行します。
+
+```bash
+ruff check --select D src/tlacraftpy
+```
+
 ## テスト
 
 Javaと[TLC 1.7.4のJAR](https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar)を用意し、
