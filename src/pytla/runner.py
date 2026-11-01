@@ -120,7 +120,7 @@ def classify(output, returncode, artifacts):
         if trace.loop_start is None:
             raise TLCError("Temporal counterexample has no loop; see tlc.log")
         properties = artifacts.compiled.mapping["properties"]
-        # TLC may not identify which of multiple temporal properties failed.
+        # Report the property name when exactly one property is being checked.
         name = next(iter(properties.values())) if len(properties) == 1 else None
         return CheckResult(Status.Violated, artifacts, trace, name)
     if returncode == 0 and "Model checking completed. No error has been found." in output:

@@ -1,4 +1,4 @@
-"""Run normally to check with TLC; --export-only needs no Java/TLC."""
+"""Check request-response liveness with TLC, or export the TLA+ specification."""
 import argparse
 from enum import Enum, auto
 

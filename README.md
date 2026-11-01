@@ -1,32 +1,23 @@
-# pytla prototype
+# tlacraftpy
 
-Pythonの関数を仕様として読み取り、TLA+へ変換してTLCで検証する最小実装です。
-Python 3.11以降を使います。実行時のPython依存パッケージはありません。
-JavaとTLCは利用者が用意します。ライブラリによるダウンロードやインストールは行いません。
+## 概要
 
-## まず変換する
+tlacraftpyは、PythonでTLA+のサブセットに相当する仕様を記述し、TLCで検証するライブラリです。
+状態・遷移・時相的な性質を定義し、検証結果と反例をPython側の名前で確認できます。
 
-このディレクトリで実行します。変換だけならJavaもTLCも不要です。
+以下では、一度に1件の要求を受け付けるシステムについて、「要求が来たら、いつか応答する」という性質を記述します。
+サンプルのコード全体は[examples/request_response.py](examples/request_response.py)にあります。
+
+## セットアップ
+
+Python 3.11以降と、Java、TLCの`tla2tools.jar`を用意します。
+このディレクトリで次のコマンドを実行して、ライブラリをインストールします。
 
 ```bash
-PYTHONPATH=src python examples/request_response.py --export-only
+python -m pip install -e .
 ```
 
-出力先は`.pytla/request_response/`です。
-
-| ファイル | 内容 |
-| --- | --- |
-| `RequestResponse.tla` | 変換した仕様 |
-| `RequestResponse.cfg` | TLCの設定 |
-| `mapping.json` | TLA+の識別子とPythonの名前の対応 |
-| `tlc.log` | TLC実行時の標準出力・標準エラー |
-
-通常のPythonパッケージとしてインストールする場合は`python -m pip install -e .`を使えます。
-インストール後は`PYTHONPATH=src`の指定を省略できます。
-
-## TLCで検証する
-
-利用者が用意した`tla2tools.jar`のパスを、このプロジェクトの`pyproject.toml`に設定します。
+TLCのJARとJavaのパスは、プロジェクトの`pyproject.toml`に設定します。
 相対パスは`pyproject.toml`のあるディレクトリを基準に解釈します。
 
 ```toml
@@ -35,104 +26,119 @@ tlc_jar = "/path/to/tla2tools.jar"
 java = "/path/to/java"
 ```
 
-Javaは`PATH`上の`java`を優先します。見つからない場合に、上記の`java`を使います。
-TLCのJARは`check(..., tlc_jar=...)`でも指定でき、設定ファイルより優先されます。
-引数で渡す相対パスは、実行時のカレントディレクトリが基準です。
+Javaは`PATH`上の`java`を優先し、見つからない場合に設定ファイルの`java`を使います。
 
-```bash
-PYTHONPATH=src python examples/request_response.py
-```
+## 要求・応答モデルの仕様
 
-設定せずにJARのパスを渡すこともできます。
+モデルの状態は「待機中」「要求あり」「応答あり」の3つです。
+要求の受け付けで「要求あり」、応答で「応答あり」へ進み、次の要求に備えて「待機中」へ戻ります。
+仕様は`.py`ファイルに記述します。
 
-```bash
-PYTHONPATH=src python examples/request_response.py --tlc-jar /path/to/tla2tools.jar
-```
+### 状態と遷移
 
-基準例は「要求が来たら、いつか応答する」を検証します。
-応答アクションの弱公平性を仮定した場合は成立し、仮定を外すと要求後にstutteringし続ける反例が期待されます。
-
-```bash
-PYTHONPATH=src python examples/request_response.py --without-fairness
-```
-
-例のスクリプトの終了コードは、成立が`0`、反例ありが`1`、検証未完了が`2`です。
-ライブラリの`check`自体はプロセスを終了させず、結果を返します。
-
-## 仕様の記述
-
-完全な基準例は[examples/request_response.py](examples/request_response.py)にあります。
+`Enum`で状態変数の値域を定義し、`@state`の型注釈で指定します。
+各メンバーを仕様上の値として区別し、次状態の値もこのEnumの中から選びます。
 
 ```python
+from enum import Enum, auto
+
+from pytla import (
+    Specification, Status, action, any_action, check, initial,
+    leads_to, state, temporal, unconstrained, unchanged, weak_fairness,
+)
+
+
 class Phase(Enum):
     Idle = auto()
     Requested = auto()
     Responded = auto()
 
+
 @state
 class State:
     phase: Phase
+
+
+@initial
+def init(s):
+    return s.phase == Phase.Idle
+
+
+@action
+def request(s, t):
+    return s.phase == Phase.Idle and t.phase == Phase.Requested
+
 
 @action
 def respond(s, t):
     return s.phase == Phase.Requested and t.phase == Phase.Responded
 
-@temporal
-def every_request_gets_response(s):
-    return leads_to(s.phase == Phase.Requested, s.phase == Phase.Responded)
+
+@action
+def reset(s, t):
+    return s.phase == Phase.Responded and t.phase == Phase.Idle
 ```
 
-`@initial`と`@temporal`は現在状態の引数を一つ、`@action`は現在と次状態の引数を二つ取ります。
-引数の名前は自由です。仕様関数の本体は実行せず、ファイルから取得したASTを解析します。
-REPL、Notebook、`exec`で生成した関数は対象外です。
+`@initial`は初期状態、`@action`は状態間の遷移を定義します。
+この例では現在状態を`s`、次状態を`t`としています。引数の名前は自由です。
 
-対応する本体は単一の`return`文です。式では`==`、`!=`、`and`、`or`、`not`、
+関数の本体は単一の`return`文で記述します。式では`==`、`!=`、`and`、`or`、`not`、
 論理値、状態フィールド、宣言したEnumのメンバーを使えます。
-異なるEnum間の比較、任意の関数呼び出し、代入、ループなどは変換エラーにします。
-`leads_to(P, Q)`の引数は状態述語に限定し、時相演算子の入れ子は未対応です。
-複数の`leads_to`式を`and`、`or`、`not`で組み合わせることはできます。
+比較には同じEnumの値を使います。
 
-## 値域・保持・未制約
+### 状態の保持と値の選択
 
-各状態変数の値域は、型注釈に指定したEnumのメンバーです。
-初期状態に`TypeOK`、各アクションに`TypeOK'`を加えるので、次状態を未制約にしても値域外には出ません。
-EnumのPython側の数値・文字列の値は使わず、メンバーをTLCのモデル値へ変換します。
+`unchanged(s.phase)`で、次状態でも`phase`の値を保持します。
+たとえば、状態を保持するアクションは次のように書けます。
 
 ```python
 @action
-def respond(s, t):
-    return (
-        s.phase == Phase.Requested
-        and t.phase == Phase.Responded
-        and unchanged(s.other)
-    )
+def wait(s, t):
+    return unchanged(s.phase)
 ```
 
-`unchanged(s.other)`は`other' = other`を表します。
-`unconstrained(s.other)`は論理式として`TRUE`を出力し、指定漏れの警告を抑制します。
+`unconstrained(s.phase)`で、次状態の値をEnumの値域全体から選べることを明示します。
 どちらもアクション内で、現在状態のフィールドを一つ指定します。
 
 未指定の次状態フィールドには`UnconstrainedWarning`を出します。
-これは構文に基づく補助診断で、式が変数を実質的に制約することの証明ではありません。
-`or`では各分岐の指定を調べますが、論理的な同値変形や恒真式までは解析しません。
+`unchanged`または`unconstrained`で扱いを明示すると、この警告を抑制できます。
+警告は式に書かれた次状態フィールドの指定を確認し、`or`では各分岐を調べます。
 
-## TLA+への対応
+### 進捗の性質と公平性
 
-仕様は次の式に変換します。
+`@temporal`で、実行全体について検証する性質を定義します。
+`leads_to(P, Q)`は、`P`が成立するたびに、その位置以降のどこかで`Q`が成立することを表します。
+引数には状態についての条件式を二つ指定し、複数の`leads_to`式を`and`、`or`、`not`で組み合わせることもできます。
 
-```tla
-Spec == Init /\ [][Next]_vars /\ WF_vars(Respond)
+```python
+@temporal
+def every_request_gets_response(s):
+    return leads_to(
+        s.phase == Phase.Requested,
+        s.phase == Phase.Responded,
+    )
 ```
 
-`[][Next]_vars`で全変数を保持するステップを許し、`weak_fairness(respond)`を`WF_vars`へ変換します。
-公平性の対象は`next`に登録したアクションに限ります。
-`leads_to(P, Q)`は`P ~> Q`に変換します。
+仕様では、全変数を保持するステップ（stuttering）を許します。
+応答の進捗を保証するため、`weak_fairness(respond)`で応答アクションの弱公平性を仮定します。
+これは、応答がある時点以降ずっと実行可能であり続けるなら、応答が無限回実行されるという条件です。
 
-初期版ではデッドロック検査を無効にしています。
-到達可能なすべての状態と、指定した時相的性質をTLCで検査します。
-整数、集合、量化、強公平性、独立した不変条件API、リファインメントは未実装です。
+初期状態、遷移、公平性を`Specification`にまとめます。
+公平性の対象には、`next`に登録したアクションを指定します。
 
-## 結果を使う
+```python
+system = Specification(
+    state=State,
+    init=init,
+    next=any_action(request, respond, reset),
+    fairness=[weak_fairness(respond)],
+)
+```
+
+## TLCによるモデル検査
+
+`check`に仕様と検証する性質を渡します。TLA+とTLC設定ファイルを生成し、TLCを実行します。
+`timeout`には検証時間の上限を秒単位で指定します。この例では最大30秒間実行します。
 
 ```python
 result = check(
@@ -140,43 +146,68 @@ result = check(
     properties=[every_request_gets_response],
     timeout=30,
 )
+```
 
+サンプルの仕様は、次のコマンドで検証できます。
+
+```bash
+python examples/request_response.py
+```
+
+TLCのJARは、コマンドの`--tlc-jar`または`check(..., tlc_jar=...)`でも指定できます。
+引数での指定は設定ファイルより優先され、相対パスは実行時のカレントディレクトリを基準に解釈します。
+
+```bash
+python examples/request_response.py --tlc-jar /path/to/tla2tools.jar
+```
+
+公平性の仮定を外したモデルも検証できます。
+この場合は、要求後にstutteringし続ける実行が、進捗の性質に違反する反例になります。
+
+```bash
+python examples/request_response.py --without-fairness
+```
+
+## 検証結果と反例
+
+`check`は検証結果を返し、呼び出し元で結果に応じた処理を記述できます。
+
+| 結果 | 意味 | サンプルの終了コード |
+| --- | --- | --- |
+| `Status.Passed` | 検証が完了し、指定した性質が成立 | `0` |
+| `Status.Violated` | 性質に違反する反例を検出 | `1` |
+| `Status.Incomplete` | 時間制限などにより検証が未完了 | `2` |
+
+```python
 if result.status is Status.Violated:
     print(result.counterexample)
 ```
 
-`Status.Passed`、`Status.Violated`、`Status.Incomplete`を区別します。
-`timeout`の単位は秒で、省略時は時間制限を設けません。
-TLCの完了メッセージと正常終了の両方を確認した場合だけ`Passed`を返します。
-認識できない出力やTLCのエラーは`TLCError`にし、成立とは扱いません。
-変換失敗は`SpecificationError`、Java/TLCの設定不備は`ConfigurationError`です。
+反例では状態変数と値をPythonの名前で表示し、循環の戻り先やstutteringを示します。
+`result.property_name`には、特定できた違反の性質名を格納します。`None`は性質名が未特定であることを表します。
 
-反例では状態変数と値をPythonの名前へ戻し、循環の戻り先やstutteringを表示します。
-複数の時相的性質を同時に検査した場合、TLCが違反した性質を特定しないことがあります。
-その場合は`result.property_name`を`None`とし、名前を推測しません。
+仕様の変換に関するエラーは`SpecificationError`、JavaやTLCの設定に関するエラーは`ConfigurationError`、
+TLCの実行や結果の読み取りに関するエラーは`TLCError`として通知します。
+
+## 生成ファイルとログ
+
+サンプルの出力先は`.pytla/request_response/`です。
+
+| ファイル | 内容 |
+| --- | --- |
+| `RequestResponse.tla` | 変換した仕様 |
+| `RequestResponse.cfg` | TLCの設定 |
+| `mapping.json` | TLA+の識別子とPythonの名前の対応 |
+| `tlc.log` | TLC実行時の標準出力・標準エラー |
+
+変換のみを実行してTLA+ファイルとTLC設定ファイルを確認する場合は、`--export-only`を指定します。
+
+```bash
+python examples/request_response.py --export-only
+```
 
 生成先は`output_dir=`、TLA+のモジュール名は`module=`で変更できます。
 既定の保存先は、仕様のソースから親へ探索して最初に見つかった`pyproject.toml`のある
 ディレクトリの`.pytla/<ソース名>/`です。見つからなければソースのあるディレクトリを基準にします。
 同じ出力先を再利用すると生成ファイルとログは上書きされます。
 並列に検証する場合は別々の`output_dir`を指定してください。
-
-## テストと現在の検証範囲
-
-```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
-```
-
-単体テストではASTの拒否・型の検査・値域・フレーム条件・警告・設定の優先順位・
-TLC起動引数・結果の分類・反例解析・タイムアウトを確認します。
-TLC出力のテストデータはプロトコルに基づく人工データです。
-
-TLC本体を用意したら、実際のTLCで公平性の有無を比較する統合テストを実行できます。
-
-```bash
-PYTLA_TLC_JAR=/path/to/tla2tools.jar PYTHONPATH=src \
-    python -m unittest discover -s tests -v
-```
-
-この作業環境にはJavaはありますがTLCのJARがないため、実際のTLCによる統合テストは未実行です。
-TLCのバージョンごとの出力差への対応も、実環境での確認が残っています。

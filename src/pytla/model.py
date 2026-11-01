@@ -1,4 +1,4 @@
-"""Declarations only: specification function bodies are never executed."""
+"""Declare state domains, specification expressions, actions, and fairness."""
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, get_type_hints

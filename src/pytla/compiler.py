@@ -1,4 +1,4 @@
-"""Restricted Python AST -> typed expressions -> TLA+. No eval/exec."""
+"""Translate specification ASTs into typed expressions and TLA+."""
 import ast
 import inspect
 import json
