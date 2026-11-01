@@ -22,11 +22,11 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6.1.0
         with:
           distribution: temurin
           java-version: "21"
@@ -48,7 +48,7 @@ jobs:
         run: python examples/request_response.py --tlc-jar "$PYTLA_TLC_JAR"
       - name: Save generated specification and TLC log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: request-response-python-${{ matrix.python-version }}
           include-hidden-files: true
