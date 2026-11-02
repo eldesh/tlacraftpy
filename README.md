@@ -53,9 +53,9 @@ python request_response.py
 チュートリアルと各リファレンスの公開先は、[ドキュメントサイト](https://eldesh.github.io/tlacraftpy/)です。
 原稿はリポジトリの`docs/`にあります。
 
-- [チュートリアル：要求・応答モデルの記述と検証](https://github.com/eldesh/tlacraftpy/blob/master/docs/tutorial.md)
-- [利用ガイド：設定、モデル検査、結果と生成ファイル](https://github.com/eldesh/tlacraftpy/blob/master/docs/usage.md)
-- [言語リファレンス：状態の型、構文、演算子、時相と公平性](https://github.com/eldesh/tlacraftpy/blob/master/docs/language.md)
-- [FIFOモデル：列・量化・不変条件を使う仕様例](https://github.com/eldesh/tlacraftpy/blob/master/docs/fifo.md)
-- [開発手順：フォーマット、テスト、CI、サイトの生成と公開](https://github.com/eldesh/tlacraftpy/blob/master/docs/development.md)
-- [配布：パッケージ形式、ビルド、公開手順](https://github.com/eldesh/tlacraftpy/blob/master/docs/distribution.md)
+- [チュートリアル：要求・応答モデル](https://github.com/eldesh/tlacraftpy/blob/master/docs/tutorial.md)
+- [利用ガイド](https://github.com/eldesh/tlacraftpy/blob/master/docs/usage.md)
+- [言語リファレンス](https://github.com/eldesh/tlacraftpy/blob/master/docs/language.md)
+- [FIFOモデル](https://github.com/eldesh/tlacraftpy/blob/master/docs/fifo.md)
+- [開発手順](https://github.com/eldesh/tlacraftpy/blob/master/docs/development.md)
+- [パッケージの配布](https://github.com/eldesh/tlacraftpy/blob/master/docs/distribution.md)

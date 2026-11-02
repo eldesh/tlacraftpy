@@ -12,13 +12,13 @@ tlacraftpyは、PythonでTLA+のサブセットに相当する仕様を記述し
 
 ## 使い方と記述できる仕様
 
-- [利用ガイド](usage.md)：設定、モデル検査、変換、結果・反例、生成ファイル
-- [言語リファレンス](language.md)：状態の型、構文、演算子、量化、時相と公平性
-- [FIFOモデル](fifo.md)：列・量化・不変条件を使った仕様と、元のTLA+仕様との対応
+- [利用ガイド](usage.md)
+- [言語リファレンス](language.md)
+- [FIFOモデル](fifo.md)
 
 ## 開発と配布
 
-- [開発手順](development.md)：フォーマット、型チェック、テスト、ドキュメントの生成と公開
-- [パッケージの配布](distribution.md)：パッケージ形式、ビルドと検査、公開手順
+- [開発手順](development.md)
+- [パッケージの配布](distribution.md)
 
 ソースコードとサンプルは[GitHubリポジトリ](https://github.com/eldesh/tlacraftpy)で管理しています。
