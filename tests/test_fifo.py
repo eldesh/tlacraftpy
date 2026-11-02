@@ -1,5 +1,4 @@
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -37,6 +36,7 @@ from tlacraftpy import (
 )
 from tlacraftpy.model import Definition
 from tlacraftpy.runner import parse_trace, resolve_tools
+from tlc import TLCTestCase
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 import fifo
@@ -318,10 +318,7 @@ class SequenceCompilerTests(unittest.TestCase):
                 parse_trace(output.replace("<<E0M0,\n E0M1>>", raw), mapping)
 
 
-@unittest.skipUnless(
-    os.environ.get("TLACRAFTPY_TLC_JAR"), "set TLACRAFTPY_TLC_JAR to run TLC"
-)
-class FIFOIntegrationTests(unittest.TestCase):
+class FIFOIntegrationTests(TLCTestCase):
     def check_model(
         self,
         system: Specification,
@@ -333,7 +330,7 @@ class FIFOIntegrationTests(unittest.TestCase):
         try:
             return check(
                 system,
-                tlc_jar=os.environ["TLACRAFTPY_TLC_JAR"],
+                tlc_jar=self.tla2tools_jar,
                 output_dir=directory,
                 timeout=60,
                 verbose=False,
@@ -419,7 +416,7 @@ class FIFOIntegrationTests(unittest.TestCase):
 
     def test_state_graph_matches_upstream_and_detects_dropped_messages(self) -> None:
         fixtures = Path(__file__).parent / "fixtures/fifo"
-        java, jar = resolve_tools(Path(fifo.__file__), os.environ["TLACRAFTPY_TLC_JAR"])
+        java, jar = resolve_tools(Path(fifo.__file__), self.tla2tools_jar)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             original = root / "original"

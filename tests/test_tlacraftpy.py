@@ -1,6 +1,5 @@
 import contextlib
 import io
-import os
 import subprocess
 import sys
 import tempfile
@@ -33,6 +32,7 @@ from tlacraftpy import (
 )
 from tlacraftpy.model import Definition
 from tlacraftpy.runner import classify, parse_trace, resolve_tools
+from tlc import TLCTestCase
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 from request_response import (  # noqa: E402
@@ -418,10 +418,7 @@ class RunnerTests(unittest.TestCase):
                 resolve_tools(Path(self.tmp.name) / "spec.py")
 
 
-@unittest.skipUnless(
-    os.environ.get("TLACRAFTPY_TLC_JAR"), "set TLACRAFTPY_TLC_JAR to run real TLC tests"
-)
-class TLCIntegrationTests(unittest.TestCase):
+class TLCIntegrationTests(TLCTestCase):
     def run_tlc(
         self, system: Specification, prop: Definition, directory: str
     ) -> CheckResult:
@@ -429,7 +426,7 @@ class TLCIntegrationTests(unittest.TestCase):
             return check(
                 system,
                 properties=[prop],
-                tlc_jar=os.environ["TLACRAFTPY_TLC_JAR"],
+                tlc_jar=self.tla2tools_jar,
                 output_dir=directory,
                 timeout=30,
                 verbose=False,

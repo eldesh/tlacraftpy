@@ -1,4 +1,6 @@
 PYTHON ?= python
+TLA2TOOLS_JAR :=
+unexport TLA2TOOLS_JAR
 .DEFAULT_GOAL := check
 
 .PHONY: check format format-check docstring-check type-check test docs docs-serve build dist-check
@@ -18,7 +20,7 @@ type-check:
 	$(PYTHON) -m mypy
 
 test:
-	$(PYTHON) -m unittest discover -s tests -v
+	$(PYTHON) tests/run_tests.py $(if $(TLA2TOOLS_JAR),--tla2tools-jar "$(TLA2TOOLS_JAR)")
 
 docs:
 	$(PYTHON) -m mkdocs build --strict

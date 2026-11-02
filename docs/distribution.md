@@ -47,8 +47,7 @@ sha256sum dist/tlacraftpy-0.1.0*
 python -m venv /tmp/tlacraftpy-wheel
 /tmp/tlacraftpy-wheel/bin/python -m pip install dist/tlacraftpy-0.1.0-py3-none-any.whl
 /tmp/tlacraftpy-wheel/bin/python -c "import tlacraftpy; print(tlacraftpy.__file__)"
-TLACRAFTPY_TLC_JAR=/path/to/tla2tools.jar \
-    make test PYTHON=/tmp/tlacraftpy-wheel/bin/python
+make test PYTHON=/tmp/tlacraftpy-wheel/bin/python TLA2TOOLS_JAR=/path/to/tla2tools.jar
 ```
 
 ソース配布物も、別の仮想環境にインストールして同じテストを実行します。
@@ -56,8 +55,7 @@ TLACRAFTPY_TLC_JAR=/path/to/tla2tools.jar \
 ```bash
 python -m venv /tmp/tlacraftpy-sdist
 /tmp/tlacraftpy-sdist/bin/python -m pip install dist/tlacraftpy-0.1.0.tar.gz
-TLACRAFTPY_TLC_JAR=/path/to/tla2tools.jar \
-    make test PYTHON=/tmp/tlacraftpy-sdist/bin/python
+make test PYTHON=/tmp/tlacraftpy-sdist/bin/python TLA2TOOLS_JAR=/path/to/tla2tools.jar
 ```
 
 CIではPython 3.11〜3.14で配布物をビルド・検査し、wheelをインストールして、

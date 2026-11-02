@@ -39,11 +39,13 @@ make check
 `make test`は単体テストを実行します。
 TLC統合テストも実行する場合は、Javaと
 [TLC 1.7.4のJAR](https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar)を用意し、
-`TLACRAFTPY_TLC_JAR`にJARのパスを指定します。`make check`でも同じ環境変数を使います。
+make変数`TLA2TOOLS_JAR`にJARのパスを指定します。`make check`でも同じ指定を使います。
 
 ```bash
-TLACRAFTPY_TLC_JAR=/path/to/tla2tools.jar make test
+make test TLA2TOOLS_JAR=/path/to/tla2tools.jar
 ```
+
+Makefileはテスト実行用スクリプトへ`--tla2tools-jar`引数でパスを渡します。
 
 TLCの統合テストでは、要求・応答とFIFOの安全性・進捗・反例を検査し、
 FIFOの元のTLA+仕様とPython版の状態遷移を比較します。
