@@ -70,7 +70,7 @@ TLCがエラーを返した場合は、テストの出力にTLCのログを表�
 | `usage.md` | 設定、検証・変換、結果、生成ファイルの扱い |
 | `language.md` | 記述できる構文と演算子の意味 |
 | `fifo.md` | FIFOの仕様と元のTLA+仕様との対応 |
-| `development.md` | 開発時の検査、ドキュメントの生成 |
+| `development.md` | 開発時の検査、ドキュメントの生成・公開 |
 | `distribution.md` | Pythonパッケージのビルド・検査・公開 |
 
 サイト内の文書はMarkdownファイルへの相対リンクで参照します。
@@ -95,6 +95,19 @@ mkdocs build --strict
 ビルドでは、ナビゲーション、文書間のリンク、見出しへのリンクを検査します。
 警告もエラーとして扱います。
 生成元のMarkdownは、GitHub上でも閲覧できます。
+
+## GitHub Pagesへの公開
+
+公開先は`https://eldesh.github.io/tlacraftpy/`です。
+リポジトリのSettings → Pages → Build and deploymentで、SourceにGitHub Actionsを指定します。
+
+[Documentationワークフロー](https://github.com/eldesh/tlacraftpy/blob/master/.github/workflows/docs.yml)は、
+`docs/`、`mkdocs.yml`、`pyproject.toml`、公開ワークフローの変更を対象に動作します。
+pull requestではサイトのビルドとリンク検査を実行します。
+Pagesを有効にしたリポジトリでは、`master`へのpushで生成したサイトを`github-pages`環境へデプロイします。
+
+手動で公開する場合は、Actions → Documentation → Run workflowで`master`を選んで実行します。
+ビルドの成功と公開先のURLは、ワークフローの実行結果から確認できます。
 
 ## GitHub Actions
 

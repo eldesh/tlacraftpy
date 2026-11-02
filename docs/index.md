@@ -18,7 +18,7 @@ tlacraftpyは、PythonでTLA+のサブセットに相当する仕様を記述し
 
 ## 開発と配布
 
-- [開発手順](development.md)：フォーマット、型チェック、テスト、ドキュメントの生成
+- [開発手順](development.md)：フォーマット、型チェック、テスト、ドキュメントの生成と公開
 - [パッケージの配布](distribution.md)：パッケージ形式、ビルドと検査、公開手順
 
 ソースコードとサンプルは[GitHubリポジトリ](https://github.com/eldesh/tlacraftpy)で管理しています。
