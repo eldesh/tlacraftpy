@@ -9,6 +9,8 @@ tlacraftpyは、PythonでTLA+のサブセットに相当する仕様を記述し
 サンプルのコード全体は[examples/request_response.py](../examples/request_response.py)にあります。
 このファイルを`request_response.py`として保存すると、以下のコマンドで実行できます。
 
+使える構文と各演算子の意味は[言語リファレンス](language.md)を参照してください。
+
 ## セットアップ
 
 Python 3.11以降と、Java、TLCの`tla2tools.jar`を用意します。

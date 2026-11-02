@@ -50,6 +50,7 @@ python request_response.py
 
 ## ドキュメント
 
+- [言語リファレンス：状態の型、構文、演算子、時相と公平性](https://github.com/eldesh/tlacraftpy/blob/master/docs/language.md)
 - [利用ガイド：仕様の記述、モデル検査、結果と反例](https://github.com/eldesh/tlacraftpy/blob/master/docs/usage.md)
 - [開発手順：フォーマット、テスト、CI](https://github.com/eldesh/tlacraftpy/blob/master/CONTRIBUTING.md)
 - [配布：パッケージ形式、ビルド、公開手順](https://github.com/eldesh/tlacraftpy/blob/master/docs/distribution.md)
