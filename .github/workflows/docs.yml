@@ -6,12 +6,14 @@ on:
     paths:
       - "docs/**"
       - "mkdocs.yml"
+      - "Makefile"
       - "pyproject.toml"
       - ".github/workflows/docs.yml"
   pull_request:
     paths:
       - "docs/**"
       - "mkdocs.yml"
+      - "Makefile"
       - "pyproject.toml"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
@@ -36,7 +38,7 @@ jobs:
       - name: Install documentation tools
         run: python -m pip install -e '.[docs]'
       - name: Build and validate documentation
-        run: mkdocs build --strict
+        run: make docs
       - name: Upload Pages site
         if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5.0.0

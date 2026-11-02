@@ -93,7 +93,7 @@ make docs
 リポジトリのSettings → Pages → Build and deploymentで、SourceにGitHub Actionsを指定します。
 
 [Documentationワークフロー](https://github.com/eldesh/tlacraftpy/blob/master/.github/workflows/docs.yml)は、
-`docs/`、`mkdocs.yml`、`pyproject.toml`、公開ワークフローの変更を対象に動作します。
+`docs/`、`mkdocs.yml`、`Makefile`、`pyproject.toml`、公開ワークフローの変更を対象に動作します。
 pull requestではサイトのビルドとリンク検査を実行します。
 Pagesを有効にしたリポジトリでは、`master`へのpushで生成したサイトを`github-pages`環境へデプロイします。
 
@@ -102,17 +102,13 @@ Pagesを有効にしたリポジトリでは、`master`へのpushで生成した
 
 ## GitHub Actions
 
-[Testsワークフロー](https://github.com/eldesh/tlacraftpy/blob/master/.github/workflows/tests.yml)は、pushとpull requestを契機に実行します。
-Actions画面のRun workflowからも起動できます。
-
-Python formatting and typesジョブで、Ruffによるフォーマット・docstringのチェックと、
-mypyによる型チェックを実行します。
-
-Python 3.11・3.12・3.13・3.14、Java 21、TLC 1.7.4を使い、配布物のビルド・検査とwheelのインストール、
-単体テスト、TLC統合テスト、要求・応答とFIFOのサンプルの実行を確認します。
-TLCのダウンロード時にはSHA-256を照合します。
+CIもMakefileのターゲットを使用します。
+[Testsワークフロー](https://github.com/eldesh/tlacraftpy/blob/master/.github/workflows/tests.yml)で
+コードの検査と配布物の検査、TLC統合テストを実行し、
+[Documentationワークフロー](https://github.com/eldesh/tlacraftpy/blob/master/.github/workflows/docs.yml)で
+サイトを生成します。実行環境とサンプルの検証内容は各ワークフローに定義しています。
 
 サンプルが生成したTLA+、TLC設定、名前の対応表、TLCログは、
-各ジョブの`examples-python-<バージョン>`アーティファクトから取得できます。
+Testsワークフローの`examples-python-<バージョン>`アーティファクトから取得できます。
 
 パッケージ形式とビルド・公開の手順は「[パッケージの配布](distribution.md)」にあります。

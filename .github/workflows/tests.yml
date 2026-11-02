@@ -25,11 +25,11 @@ jobs:
       - name: Install development tools
         run: python -m pip install -e '.[dev]'
       - name: Check Python formatting
-        run: ruff format --check .
+        run: make format-check
       - name: Check Python docstrings
-        run: ruff check --select D src/tlacraftpy
+        run: make docstring-check
       - name: Check Python types
-        run: mypy
+        run: make type-check
 
   tests:
     name: Python ${{ matrix.python-version }} / TLC
@@ -51,9 +51,7 @@ jobs:
       - name: Install packaging tools
         run: python -m pip install '.[release]'
       - name: Build and check distributions
-        run: |
-          python -m build
-          python -m twine check --strict dist/*
+        run: make dist-check
       - name: Install wheel
         run: python -m pip install --force-reinstall --no-deps dist/*.whl
       - name: Download TLC 1.7.4
@@ -67,7 +65,7 @@ jobs:
           echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $TLACRAFTPY_TLC_JAR" | sha256sum --check
           echo "TLACRAFTPY_TLC_JAR=$TLACRAFTPY_TLC_JAR" >> "$GITHUB_ENV"
       - name: Unit and TLC integration tests
-        run: python -m unittest discover -s tests -v
+        run: make test
       - name: Request-response example
         run: python examples/request_response.py --tlc-jar "$TLACRAFTPY_TLC_JAR"
       - name: FIFO example
