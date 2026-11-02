@@ -12,9 +12,6 @@ setuptoolsと`pyproject.toml`による標準的なPythonパッケージとして
 | `tlacraftpy-0.1.0-py3-none-any.whl` | 利用者がpipでインストールするPythonパッケージ |
 | `tlacraftpy-0.1.0.tar.gz` | ソース、ドキュメント、サンプル、テストを含む配布物 |
 
-wheelの`py3-none-any`は、対応するPython 3でOSに依存せずインストールできる形式を示します。
-JavaとTLCは、モデル検査を実行する環境に用意し、`[tool.tlacraftpy]`でパスを設定します。
-
 ## ライセンス
 
 MITライセンスで配布します。条文と著作権表示は[LICENSE](https://github.com/eldesh/tlacraftpy/blob/master/LICENSE)にあります。
