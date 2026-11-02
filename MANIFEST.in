@@ -1,4 +1,4 @@
-include README.md CONTRIBUTING.md LICENSE mkdocs.yml
+include README.md CONTRIBUTING.md LICENSE mkdocs.yml Makefile
 recursive-include docs *.md
 recursive-include examples *.py
 recursive-include tests *.py *.tla *.cfg *.md

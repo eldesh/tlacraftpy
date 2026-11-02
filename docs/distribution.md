@@ -26,11 +26,10 @@ python -m pip install -e '.[release]'
 ```
 
 配布用のファイルは`dist/`に生成します。
-`build`はソース配布物を作り、そのソース配布物からwheelをビルドします。
+`make dist-check`はビルドとTwineによる検査を実行します。ビルドだけを行う場合は`make build`を使います。
 
 ```bash
-python -m build
-python -m twine check --strict dist/*
+make dist-check
 ```
 
 Twineの検査では、パッケージ情報とPyPIに掲載するREADMEの形式を確認します。
@@ -49,7 +48,7 @@ python -m venv /tmp/tlacraftpy-wheel
 /tmp/tlacraftpy-wheel/bin/python -m pip install dist/tlacraftpy-0.1.0-py3-none-any.whl
 /tmp/tlacraftpy-wheel/bin/python -c "import tlacraftpy; print(tlacraftpy.__file__)"
 TLACRAFTPY_TLC_JAR=/path/to/tla2tools.jar \
-    /tmp/tlacraftpy-wheel/bin/python -m unittest discover -s tests -v
+    make test PYTHON=/tmp/tlacraftpy-wheel/bin/python
 ```
 
 ソース配布物も、別の仮想環境にインストールして同じテストを実行します。
@@ -58,7 +57,7 @@ TLACRAFTPY_TLC_JAR=/path/to/tla2tools.jar \
 python -m venv /tmp/tlacraftpy-sdist
 /tmp/tlacraftpy-sdist/bin/python -m pip install dist/tlacraftpy-0.1.0.tar.gz
 TLACRAFTPY_TLC_JAR=/path/to/tla2tools.jar \
-    /tmp/tlacraftpy-sdist/bin/python -m unittest discover -s tests -v
+    make test PYTHON=/tmp/tlacraftpy-sdist/bin/python
 ```
 
 CIではPython 3.11〜3.14で配布物をビルド・検査し、wheelをインストールして、
