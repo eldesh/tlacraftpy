@@ -106,8 +106,9 @@ system = Specification(
 
 ## 検証と成立の確認
 
-`check`に仕様と時相的な性質を渡します。
-この例では検証時間を30秒に制限し、生成するTLA+のモジュール名を`RequestResponse`にします。
+`check`の最初の引数には、検証する仕様`system`を渡します。
+`properties`には、検証したい性質を`[every_request_gets_response]`のようなリストで指定します。
+`module="RequestResponse"`で生成するTLA+のモジュール名を指定し、`timeout=30`で検証時間を30秒に制限します。
 
 ```python
 result = check(
@@ -150,6 +151,8 @@ unfair_result = check(
 )
 assert unfair_result.status is Status.Violated
 ```
+
+`output_dir`で、最初の検証とは別の保存先を指定しています。
 
 もう一度実行すると、2回目の検証では`TLC: violated`と反例が表示されます。
 反例は、要求を受け付けた後、`Phase.Requested`のままstutteringし続ける実行です。

@@ -61,19 +61,15 @@ result = check(
 )
 ```
 
-| 引数 | 内容 | 既定値 |
-| --- | --- | --- |
-| `spec` | 検証する`Specification`。最初の位置引数 | 必須 |
-| `invariants` | `@invariant`定義のイテラブル | 空 |
-| `properties` | `@temporal`定義のイテラブル | 空 |
-| `tlc_jar` | TLC JARのパス | プロジェクト設定 |
-| `output_dir` | 生成ファイルとログの保存先 | プロジェクト内の`.tlacraftpy/<ソース名>/` |
-| `module` | TLA+のモジュール名と生成ファイルの名前 | `"Model"` |
-| `timeout` | TLCを待つ時間の上限。正の秒数または`None` | `None`（完了まで待つ） |
-| `verbose` | 結果と保存先を標準出力に表示するか | `True` |
+この例では、次の引数を指定しています。
 
-`spec`以外はキーワード引数で指定します。
-`module`には、ASCII英字で始まり、ASCII英数字とアンダースコアからなる名前を指定します。
+- 最初の引数`system`：検証する仕様
+- `invariants=[bounded]`：各状態で不変条件`bounded`が成立することを検証
+- `properties=[responds]`：実行全体で時相的な性質`responds`が成立することを検証
+- `timeout=30`：TLCを待つ時間を30秒に制限
+
+検証する不変条件や時相的な性質は、`[bounded]`や`[responds]`のようなリストで渡します。
+複数ある場合は、同じリストに並べて指定します。タプルでも指定できます。
 
 ## 変換とファイル出力
 
@@ -86,6 +82,9 @@ compiled = compile_spec(system, properties=[responds], module="Response")
 print(compiled.tla)
 print(compiled.cfg)
 ```
+
+`module="Response"`でTLA+のモジュール名を指定します。
+名前には、ASCII英字で始まり、ASCII英数字とアンダースコアからなる文字列を使います。
 
 `Compiled`には、`module`、`tla`、`cfg`、名前の対応表`mapping`、初期条件のソースファイルのパス`source`が含まれます。
 
