@@ -24,12 +24,13 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/eldesh/tlacraftpy"
-Documentation = "https://github.com/eldesh/tlacraftpy/tree/master/docs"
+Documentation = "https://eldesh.github.io/tlacraftpy/"
 Issues = "https://github.com/eldesh/tlacraftpy/issues"
 
 [project.optional-dependencies]
 dev = ["ruff==0.17.3", "mypy==2.4.1"]
 release = ["build==1.6.1", "twine==7.0.0"]
+docs = ["mkdocs==1.6.1"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

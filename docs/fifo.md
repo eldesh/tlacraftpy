@@ -8,7 +8,7 @@ Lamportの『Specifying Systems』に付属する
 をPythonで記述した例です。
 入力チャネルで受け取ったメッセージをキューに追加し、先頭から出力チャネルへ送ります。
 
-Python版は[examples/fifo.py](../examples/fifo.py)にあります。
+Python版は[examples/fifo.py](https://github.com/eldesh/tlacraftpy/blob/master/examples/fifo.py)にあります。
 メッセージは`Message.A`と`Message.B`の2種類、キューの容量は2です。
 入力・出力チャネルは、送信側と受信側が2値のフラグを交互に切り替えるハンドシェイクで同期します。
 
@@ -132,5 +132,5 @@ python examples/fifo.py --export-only
 この比較は、指定した有限モデルでの状態遷移の対応を確認します。
 キューの残りを捨てる誤った取り出し操作についても、比較テストで遷移の差を検出します。
 
-元のファイルと比較用ラッパーは[tests/fixtures/fifo](../tests/fixtures/fifo)にあります。
+元のファイルと比較用ラッパーは[tests/fixtures/fifo](https://github.com/eldesh/tlacraftpy/tree/master/tests/fixtures/fifo)にあります。
 元のTLA+ファイルのMITライセンス表示も同梱しています。

@@ -295,7 +295,7 @@ result = check(
 
 この文書のコード断片で使うデコレータとDSL演算子、構成・検証の関数は、
 すべて`tlacraftpy`からインポートできます。
-モデルのコード全体と実行例は、[要求・応答モデル](../examples/request_response.py)と
+モデルのコード全体と実行例は、[要求・応答モデル](https://github.com/eldesh/tlacraftpy/blob/master/examples/request_response.py)と
 [FIFOモデル](fifo.md)を参照してください。
 
 ## 変換時の診断

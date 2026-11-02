@@ -17,7 +17,7 @@ JavaとTLCは、モデル検査を実行する環境に用意し、`[tool.tlacra
 
 ## ライセンス
 
-MITライセンスで配布します。条文と著作権表示は[LICENSE](../LICENSE)にあります。
+MITライセンスで配布します。条文と著作権表示は[LICENSE](https://github.com/eldesh/tlacraftpy/blob/master/LICENSE)にあります。
 wheelとソース配布物にLICENSEを同梱し、パッケージ情報の`License-Expression`に`MIT`を記録します。
 
 ## ビルドと検査
