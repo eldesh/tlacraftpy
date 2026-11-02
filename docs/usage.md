@@ -1,28 +1,36 @@
 # 利用ガイド
 
-## 概要
+仕様の変換・検証に必要な設定、関数の呼び出し方、結果と生成ファイルの扱いを説明します。
+仕様を作る手順は[チュートリアル](tutorial.md)、構文と意味は[言語リファレンス](language.md)を参照してください。
+以下のコード断片では、定義済みの仕様を`system`、時相的な性質を`responds`、不変条件を`bounded`とします。
 
-tlacraftpyは、PythonでTLA+のサブセットに相当する仕様を記述し、TLCで検証するライブラリです。
-状態・遷移・時相的な性質を定義し、検証結果と反例をPython側の名前で確認できます。
+## インストール
 
-以下では、一度に1件の要求を受け付けるシステムについて、「要求が来たら、いつか応答する」という性質を記述します。
-サンプルのコード全体は[examples/request_response.py](../examples/request_response.py)にあります。
-このファイルを`request_response.py`として保存すると、以下のコマンドで実行できます。
+Python 3.11以降を使います。手元のwheelからインストールする場合は、ファイルのパスを指定します。
 
-使える構文と各演算子の意味は[言語リファレンス](language.md)を参照してください。
+```bash
+python -m pip install ./tlacraftpy-0.1.0-py3-none-any.whl
+```
 
-## セットアップ
-
-Python 3.11以降と、Java、TLCの`tla2tools.jar`を用意します。
-公開版のインストールは[READMEのセットアップ](../README.md#セットアップ)を参照してください。
-リポジトリのソースからインストールする場合は、ルートディレクトリで次のコマンドを実行します。
+リポジトリのソースからインストールする場合は、ルートディレクトリで実行します。
 
 ```bash
 python -m pip install .
 ```
 
-TLCのJARとJavaのパスは、プロジェクトの`pyproject.toml`に設定します。
-相対パスは`pyproject.toml`のあるディレクトリを基準に解釈します。
+PyPI公開後は、配布名を指定してインストールできます。
+
+```bash
+python -m pip install tlacraftpy
+```
+
+モデル検査にはJavaと[TLCのtla2tools.jar](https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar)を用意します。
+CIではJava 21とTLC 1.7.4を使用しています。
+
+## JavaとTLCの設定
+
+仕様のソースファイルから親ディレクトリを探索して最初に見つかった`pyproject.toml`の、
+`[tool.tlacraftpy]`に設定します。見つからない場合は、ソースファイルのディレクトリを基準にします。
 
 ```toml
 [tool.tlacraftpy]
@@ -30,203 +38,161 @@ tlc_jar = "/path/to/tla2tools.jar"
 java = "/path/to/java"
 ```
 
-Javaは`PATH`上の`java`を優先し、見つからない場合に設定ファイルの`java`を使います。
+| 設定 | 選択順 | 相対パスの基準 |
+| --- | --- | --- |
+| Java | `PATH`上の`java`、次に設定の`java` | 設定ファイルのあるディレクトリ |
+| TLC JAR | 呼び出し時の`tlc_jar=`、次に設定の`tlc_jar` | 引数はカレントディレクトリ、設定は設定ファイルのあるディレクトリ |
 
-## 要求・応答モデルの仕様
+Javaを`PATH`から取得できる場合、設定ファイルには`tlc_jar`だけを記述できます。
 
-モデルの状態は「待機中」「要求あり」「応答あり」の3つです。
-要求の受け付けで「要求あり」、応答で「応答あり」へ進み、次の要求に備えて「待機中」へ戻ります。
-仕様は`.py`ファイルに記述します。
+## モデル検査
 
-### 状態と遷移
-
-`Enum`で状態変数の値域を定義し、`@state`の型注釈で指定します。
-各メンバーを仕様上の値として区別し、次状態の値もこのEnumの中から選びます。
-
-```python
-from enum import Enum, auto
-
-from tlacraftpy import (
-    Specification,
-    Status,
-    action,
-    any_action,
-    check,
-    initial,
-    leads_to,
-    state,
-    temporal,
-    unconstrained,
-    unchanged,
-    weak_fairness,
-)
-
-
-class Phase(Enum):
-    Idle = auto()
-    Requested = auto()
-    Responded = auto()
-
-
-@state
-class State:
-    phase: Phase
-
-
-@initial
-def init(s):
-    return s.phase == Phase.Idle
-
-
-@action
-def request(s, t):
-    return s.phase == Phase.Idle and t.phase == Phase.Requested
-
-
-@action
-def respond(s, t):
-    return s.phase == Phase.Requested and t.phase == Phase.Responded
-
-
-@action
-def reset(s, t):
-    return s.phase == Phase.Responded and t.phase == Phase.Idle
-```
-
-`@initial`は初期状態、`@action`は状態間の遷移を定義します。
-この例では現在状態を`s`、次状態を`t`としています。引数の名前は自由です。
-
-関数の本体は単一の`return`文で記述します。式では`==`、`!=`、`and`、`or`、`not`、
-論理値、状態フィールド、宣言したEnumのメンバーを使えます。
-比較には同じEnumの値を使います。
-
-### 状態の保持と値の選択
-
-`unchanged(s.phase)`で、次状態でも`phase`の値を保持します。
-たとえば、状態を保持するアクションは次のように書けます。
+`check`は、仕様をTLA+に変換し、生成ファイルを書き出してTLCを実行します。
+状態の不変条件は`invariants`、時相的な性質は`properties`に指定します。
 
 ```python
-@action
-def wait(s, t):
-    return unchanged(s.phase)
-```
+from tlacraftpy import check
 
-`unconstrained(s.phase)`で、次状態の値をEnumの値域全体から選べることを明示します。
-どちらもアクション内で、現在状態のフィールドを一つ指定します。
-
-未指定の次状態フィールドには`UnconstrainedWarning`を出します。
-`unchanged`または`unconstrained`で扱いを明示すると、この警告を抑制できます。
-警告は式に書かれた次状態フィールドの指定を確認し、`or`では各分岐を調べます。
-
-### 進捗の性質と公平性
-
-`@temporal`で、実行全体について検証する性質を定義します。
-`leads_to(P, Q)`は、`P`が成立するたびに、その位置以降のどこかで`Q`が成立することを表します。
-引数には状態についての条件式を二つ指定し、複数の`leads_to`式を`and`、`or`、`not`で組み合わせることもできます。
-
-```python
-@temporal
-def every_request_gets_response(s):
-    return leads_to(
-        s.phase == Phase.Requested,
-        s.phase == Phase.Responded,
-    )
-```
-
-仕様では、全変数を保持するステップ（stuttering）を許します。
-応答の進捗を保証するため、`weak_fairness(respond)`で応答アクションの弱公平性を仮定します。
-これは、応答がある時点以降ずっと実行可能であり続けるなら、応答が無限回実行されるという条件です。
-
-初期状態、遷移、公平性を`Specification`にまとめます。
-公平性の対象には、`next`に登録したアクションを指定します。
-
-```python
-system = Specification(
-    state=State,
-    init=init,
-    next=any_action(request, respond, reset),
-    fairness=[weak_fairness(respond)],
-)
-```
-
-## TLCによるモデル検査
-
-列を使う状態、量化、不変条件の記述例は[FIFOモデル](fifo.md)にあります。
-
-`check`に仕様と検証する性質を渡します。TLA+とTLC設定ファイルを生成し、TLCを実行します。
-状態の不変条件は`invariants=[...]`、時相的な性質は`properties=[...]`に指定します。
-`timeout`には検証時間の上限を秒単位で指定します。この例では最大30秒間実行します。
-
-```python
 result = check(
     system,
-    properties=[every_request_gets_response],
+    invariants=[bounded],
+    properties=[responds],
     timeout=30,
 )
 ```
 
-サンプルの仕様は、次のコマンドで検証できます。
+| 引数 | 内容 | 既定値 |
+| --- | --- | --- |
+| `spec` | 検証する`Specification`。最初の位置引数 | 必須 |
+| `invariants` | `@invariant`定義のイテラブル | 空 |
+| `properties` | `@temporal`定義のイテラブル | 空 |
+| `tlc_jar` | TLC JARのパス | プロジェクト設定 |
+| `output_dir` | 生成ファイルとログの保存先 | プロジェクト内の`.tlacraftpy/<ソース名>/` |
+| `module` | TLA+のモジュール名と生成ファイルの名前 | `"Model"` |
+| `timeout` | TLCを待つ時間の上限。正の秒数または`None` | `None`（完了まで待つ） |
+| `verbose` | 結果と保存先を標準出力に表示するか | `True` |
 
-```bash
-python request_response.py
+`spec`以外はキーワード引数で指定します。
+`module`には、ASCII英字で始まり、ASCII英数字とアンダースコアからなる名前を指定します。
+
+## 変換とファイル出力
+
+TLA+とTLC設定のテキストをPython側で取得する場合は、`compile_spec`を使います。
+
+```python
+from tlacraftpy import compile_spec
+
+compiled = compile_spec(system, properties=[responds], module="Response")
+print(compiled.tla)
+print(compiled.cfg)
 ```
 
-TLCのJARは、コマンドの`--tlc-jar`または`check(..., tlc_jar=...)`でも指定できます。
-引数での指定は設定ファイルより優先され、相対パスは実行時のカレントディレクトリを基準に解釈します。
+`Compiled`には、`module`、`tla`、`cfg`、名前の対応表`mapping`、初期条件のソースファイルのパス`source`が含まれます。
 
-```bash
-python request_response.py --tlc-jar /path/to/tla2tools.jar
+ファイルへ書き出す場合は`export`を使います。
+
+```python
+from tlacraftpy import export
+
+artifacts = export(
+    system,
+    properties=[responds],
+    module="Response",
+    output_dir="generated/response",
+)
+print(artifacts.tla)
+print(artifacts.cfg)
 ```
 
-公平性の仮定を外したモデルも検証できます。
-この場合は、要求後にstutteringし続ける実行が、進捗の性質に違反する反例になります。
-
-```bash
-python request_response.py --without-fairness
-```
+`compile_spec`と`export`も、`invariants`と`properties`で検証対象を指定します。
+`export`は`output_dir`を受け取り、書き出したファイルのパスを`Artifacts`として返します。
 
 ## 検証結果と反例
 
-`check`は検証結果を返し、呼び出し元で結果に応じた処理を記述できます。
+`check`は`CheckResult`を返します。`status`で検証の結果を判断できます。
 
-| 結果 | 意味 | サンプルの終了コード |
-| --- | --- | --- |
-| `Status.Passed` | 検証が完了し、指定した性質が成立 | `0` |
-| `Status.Violated` | 性質に違反する反例を検出 | `1` |
-| `Status.Incomplete` | 時間制限などにより検証が未完了 | `2` |
+| 結果 | 意味 |
+| --- | --- |
+| `Status.Passed` | 検証が完了し、指定した性質が成立 |
+| `Status.Violated` | 性質に違反する反例を検出 |
+| `Status.Incomplete` | 時間制限や中断により検証が未完了 |
 
 ```python
+from tlacraftpy import Status
+
 if result.status is Status.Violated:
+    print(result.property_name)
     print(result.counterexample)
+elif result.status is Status.Incomplete:
+    print(result.reason)
 ```
 
-反例では状態変数と値をPythonの名前で表示し、循環の戻り先やstutteringを示します。
-`result.property_name`には、特定できた違反の性質名を格納します。`None`は性質名が未特定であることを表します。
+`property_name`は違反した不変条件のPython名、または検証対象が一つの場合の時相的な性質のPython名です。
+`None`は性質名が未特定であることを表します。
+`reason`には、時間制限や中断の理由を格納します。
+`verbose=False`を指定すると、呼び出し元で表示方法を決められます。
 
-仕様の変換に関するエラーは`SpecificationError`、JavaやTLCの設定に関するエラーは`ConfigurationError`、
-TLCの実行や結果の読み取りに関するエラーは`TLCError`として通知します。
+`counterexample`には、初期状態からの状態列`states`を格納します。
+各状態の`number`は1から始まる番号、`values`はPythonのフィールド名から表示用の値への辞書、
+`label`は遷移や初期条件のラベルです。
+列の値は`(Message.A, Message.B)`のようなタプル記法で表示します。
+
+不変条件の反例は違反状態までの有限列です。
+時相的な性質の反例には、繰り返しの戻り先を示す`loop_start`があります。
+`stuttering=True`は、末尾の状態を保持する繰り返しを表します。
+`print(result.counterexample)`で状態列と戻り先をまとめて表示できます。
 
 ## 生成ファイルとログ
 
-サンプルの出力先は`.tlacraftpy/request_response/`です。
+`result.artifacts`または`export`の戻り値から生成ファイルを参照できます。
 
-| ファイル | 内容 |
+| 属性 | ファイル・内容 |
 | --- | --- |
-| `RequestResponse.tla` | 変換した仕様 |
-| `RequestResponse.cfg` | TLCの設定 |
-| `mapping.json` | TLA+の識別子とPythonの名前の対応 |
-| `tlc.log` | TLC実行時の標準出力・標準エラー |
+| `directory` | 保存先ディレクトリの絶対パス |
+| `tla` | `<module>.tla`：変換したTLA+仕様 |
+| `cfg` | `<module>.cfg`：TLC設定 |
+| `mapping` | `mapping.json`：TLA+の識別子とPythonの名前の対応 |
+| `log` | `tlc.log`：`check`が書き込むTLCの標準出力・標準エラー |
+| `compiled` | 生成に使用した`Compiled` |
 
-変換のみを実行してTLA+ファイルとTLC設定ファイルを確認する場合は、`--export-only`を指定します。
+既定の保存先は、初期条件のソースから探索したプロジェクトディレクトリの
+`.tlacraftpy/<ソース名>/`です。`request_response.py`の場合は`.tlacraftpy/request_response/`になります。
+`output_dir`の相対パスは、カレントディレクトリを基準に解釈します。
+
+同じ出力先では、生成ファイルとTLCログを上書きします。
+複数のモデルを並列に検証する場合や結果を残す場合は、別々の`output_dir`を指定してください。
+
+## 警告と例外
+
+| 種類 | 発生時点・内容 |
+| --- | --- |
+| `UnconstrainedWarning` | 変換時に、次状態のフィールドの指定が暗黙になっている場合 |
+| `SpecificationError` | 宣言・構成・変換時に、仕様の型や構文が不正な場合 |
+| `ConfigurationError` | 実行準備時に、設定ファイルやJava・TLCのパスが不正な場合 |
+| `TLCError` | TLCの起動・実行や、結果・反例の読み取りでエラーが発生した場合 |
+| `ValueError` | `check`の`timeout`に0以下を指定した場合 |
+| `OSError` | 生成ディレクトリ・ファイル・ログの作成や書き込みに失敗した場合 |
+
+暗黙の次状態の扱いを明示する方法は、[言語リファレンスの次状態の指定と保持](language.md#次状態の指定と保持)を参照してください。
+時間制限と性質の違反は、それぞれ`Status.Incomplete`と`Status.Violated`として返します。
+`TLCError`の診断では、表示された`tlc.log`の内容を確認できます。
+
+## サンプルの実行オプション
+
+リポジトリの`examples/request_response.py`と`examples/fifo.py`は、次のオプションを持つ実行用スクリプトです。
+
+| オプション | 用途 |
+| --- | --- |
+| `--tlc-jar PATH` | TLC JARのパスを指定 |
+| `--export-only` | TLA+とTLC設定を書き出して、保存先を表示 |
+| `--without-fairness` | 公平性の仮定を外して検証 |
 
 ```bash
-python request_response.py --export-only
+python examples/request_response.py --tlc-jar /path/to/tla2tools.jar
+python examples/request_response.py --export-only
+python examples/fifo.py --without-fairness --tlc-jar /path/to/tla2tools.jar
 ```
 
-生成先は`output_dir=`、TLA+のモジュール名は`module=`で変更できます。
-既定の保存先は、仕様のソースから親へ探索して最初に見つかった`pyproject.toml`のある
-ディレクトリの`.tlacraftpy/<ソース名>/`です。見つからなければソースのあるディレクトリを基準にします。
-同じ出力先を再利用すると生成ファイルとログは上書きされます。
-並列に検証する場合は別々の`output_dir`を指定してください。
-
-フォーマット・テスト・CIの実行手順は[CONTRIBUTING.md](../CONTRIBUTING.md)にあります。
+サンプルは、成立・反例あり・検証未完了に対して、それぞれ終了コード`0`・`1`・`2`を返します。
+コード全体は[要求・応答](https://github.com/eldesh/tlacraftpy/blob/master/examples/request_response.py)と
+[FIFO](https://github.com/eldesh/tlacraftpy/blob/master/examples/fifo.py)を参照してください。
