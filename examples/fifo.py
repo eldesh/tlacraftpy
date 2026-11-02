@@ -56,13 +56,13 @@ class State:
 
 
 @initial
-def init(s):
+def init(s: State) -> bool:
     """Start with acknowledged channels and an empty queue."""
     return s.in_ack == s.in_ready and s.out_ack == s.out_ready and s.q == ()
 
 
 @action
-def ssend(s, t):
+def ssend(s: State, t: State) -> bool:
     """Send an arbitrary message on the acknowledged input channel."""
     return exists(
         Message,
@@ -80,7 +80,7 @@ def ssend(s, t):
 
 
 @action
-def buf_rcv(s, t):
+def buf_rcv(s: State, t: State) -> bool:
     """Acknowledge the input message and append it while capacity is available."""
     return (
         s.in_ready != s.in_ack
@@ -96,7 +96,7 @@ def buf_rcv(s, t):
 
 
 @action
-def buf_send(s, t):
+def buf_send(s: State, t: State) -> bool:
     """Move the oldest queued message onto the acknowledged output channel."""
     return (
         len(s.q) > 0
@@ -112,7 +112,7 @@ def buf_send(s, t):
 
 
 @action
-def rrcv(s, t):
+def rrcv(s: State, t: State) -> bool:
     """Acknowledge the output message."""
     return (
         s.out_ready != s.out_ack
@@ -127,24 +127,24 @@ def rrcv(s, t):
 
 
 @invariant
-def bounded(s):
+def bounded(s: State) -> bool:
     """Keep queue length within the configured capacity."""
     return len(s.q) <= CAPACITY
 
 
 @temporal
-def input_acknowledged(s):
+def input_acknowledged(s: State) -> bool:
     """Every pending input handshake eventually receives an acknowledgment."""
     return leads_to(s.in_ready != s.in_ack, s.in_ready == s.in_ack)
 
 
 @temporal
-def output_acknowledged(s):
+def output_acknowledged(s: State) -> bool:
     """Every pending output handshake eventually receives an acknowledgment."""
     return leads_to(s.out_ready != s.out_ack, s.out_ready == s.out_ack)
 
 
-def make_system(*, fair=True):
+def make_system(*, fair: bool = True) -> Specification:
     """Build the bounded InnerFIFO port with optional progress assumptions.
 
     Args:
@@ -169,17 +169,23 @@ if __name__ == "__main__":
     parser.add_argument("--tlc-jar")
     args = parser.parse_args()
     system = make_system(fair=not args.without_fairness)
-    options = dict(
-        properties=[input_acknowledged, output_acknowledged],
-        invariants=[bounded],
-        module="FIFO",
-    )
+    properties = [input_acknowledged, output_acknowledged]
+    invariants = [bounded]
     if args.export_only:
-        artifacts = export(system, **options)
+        artifacts = export(
+            system, properties=properties, invariants=invariants, module="FIFO"
+        )
         print(artifacts.tla)
         print(artifacts.cfg)
     else:
-        result = check(system, tlc_jar=args.tlc_jar, timeout=60, **options)
+        result = check(
+            system,
+            properties=properties,
+            invariants=invariants,
+            module="FIFO",
+            tlc_jar=args.tlc_jar,
+            timeout=60,
+        )
         raise SystemExit(
             {Status.Passed: 0, Status.Violated: 1, Status.Incomplete: 2}[result.status]
         )

@@ -1,17 +1,20 @@
 """Explicit Java/TLC invocation and conservative result classification."""
 
+from __future__ import annotations
+
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-from .compiler import Artifacts, export, project_root
-from .model import ConfigurationError, TLCError
+from .compiler import Artifacts, _NameMapping, export, project_root
+from .model import ConfigurationError, Definition, Specification, TLCError
 
 
 class Status(Enum):
@@ -70,7 +73,7 @@ class Counterexample:
     loop_start: int | None = None  # TLC's 1-based state number
     stuttering: bool = False
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Format state values and the repeating suffix as readable text.
 
         Returns:
@@ -110,7 +113,7 @@ class CheckResult:
     property_name: str | None = None
     reason: str | None = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Format the verification outcome and associated diagnostic details.
 
         Returns:
@@ -125,7 +128,7 @@ class CheckResult:
         return text
 
 
-def _replace_names(text, mapping):
+def _replace_names(text: str, mapping: _NameMapping) -> str:
     replacements = {}
     for category in ("variables", "values", "actions", "properties", "invariants"):
         replacements.update(mapping.get(category, {}))
@@ -134,12 +137,12 @@ def _replace_names(text, mapping):
     )
 
 
-def _decode_value(raw, mapping):
+def _decode_value(raw: str, mapping: _NameMapping) -> str:
     tokens = re.findall(r"<<|>>|,|[A-Za-z][A-Za-z0-9_]*", raw)
     if "".join(tokens) != re.sub(r"\s+", "", raw):
         raise TLCError("Unsupported value in TLC counterexample; see tlc.log")
 
-    def parse(index):
+    def parse(index: int) -> tuple[str, int]:
         if index >= len(tokens):
             raise TLCError("Truncated sequence in TLC counterexample; see tlc.log")
         token = tokens[index]
@@ -169,7 +172,7 @@ def _decode_value(raw, mapping):
     return value
 
 
-def parse_trace(output, mapping):
+def parse_trace(output: str, mapping: _NameMapping) -> Counterexample:
     """Decode TLC's counterexample messages using generated name mappings.
 
     Args:
@@ -186,12 +189,15 @@ def parse_trace(output, mapping):
     """
     # -tool decorates normal TLC messages with STARTMSG/ENDMSG records.
     lines = [line for line in output.splitlines() if not line.startswith("@!@!@")]
-    states = []
-    current_number, label, values = None, "", {}
-    loop_start, stuttering = None, False
-    active_field = None
+    states: list[TraceState] = []
+    current_number: int | None = None
+    label = ""
+    values: dict[str, str] = {}
+    loop_start: int | None = None
+    stuttering = False
+    active_field: str | None = None
 
-    def flush():
+    def flush() -> None:
         nonlocal current_number, values, active_field
         if current_number is not None:
             if set(values) != set(mapping["variables"].values()):
@@ -249,7 +255,7 @@ def parse_trace(output, mapping):
     return Counterexample(tuple(states), loop_start, stuttering)
 
 
-def classify(output, returncode, artifacts):
+def classify(output: str, returncode: int, artifacts: Artifacts) -> CheckResult:
     """Interpret a TLC process's output and exit code as a verification result.
 
     Args:
@@ -298,7 +304,7 @@ def classify(output, returncode, artifacts):
     )
 
 
-def _configuration(source):
+def _configuration(source: Path) -> tuple[Path, dict[str, object]]:
     root = project_root(source)
     config = root / "pyproject.toml"
     try:
@@ -315,14 +321,16 @@ def _configuration(source):
     return root, settings
 
 
-def _path(value, root, name):
+def _path(value: object, root: Path, name: str) -> Path:
     if not isinstance(value, (str, os.PathLike)) or not str(value):
         raise ConfigurationError(f"{name} must be a nonempty filesystem path")
     path = Path(value).expanduser()
     return (root / path).resolve() if not path.is_absolute() else path.resolve()
 
 
-def resolve_tools(source, tlc_jar=None):
+def resolve_tools(
+    source: Path, tlc_jar: str | os.PathLike[str] | None = None
+) -> tuple[str, Path]:
     """Locate Java and the TLC JAR for a specification's project.
 
     Args:
@@ -366,16 +374,16 @@ def resolve_tools(source, tlc_jar=None):
 
 
 def check(
-    spec,
+    spec: Specification,
     *,
-    properties=(),
-    invariants=(),
-    tlc_jar=None,
-    output_dir=None,
-    module="Model",
-    timeout=None,
-    verbose=True,
-):
+    properties: Iterable[Definition] = (),
+    invariants: Iterable[Definition] = (),
+    tlc_jar: str | os.PathLike[str] | None = None,
+    output_dir: str | os.PathLike[str] | None = None,
+    module: str = "Model",
+    timeout: float | None = None,
+    verbose: bool = True,
+) -> CheckResult:
     """Export a specification, run TLC, and return its verification outcome.
 
     Args:

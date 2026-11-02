@@ -30,31 +30,31 @@ class State:
 
 
 @initial
-def init(s):
+def init(s: State) -> bool:
     return s.phase == Phase.Idle
 
 
 @action
-def request(s, t):
+def request(s: State, t: State) -> bool:
     return s.phase == Phase.Idle and t.phase == Phase.Requested
 
 
 @action
-def respond(s, t):
+def respond(s: State, t: State) -> bool:
     return s.phase == Phase.Requested and t.phase == Phase.Responded
 
 
 @action
-def reset(s, t):
+def reset(s: State, t: State) -> bool:
     return s.phase == Phase.Responded and t.phase == Phase.Idle
 
 
 @temporal
-def every_request_gets_response(s):
+def every_request_gets_response(s: State) -> bool:
     return leads_to(s.phase == Phase.Requested, s.phase == Phase.Responded)
 
 
-def make_system(*, fair=True):
+def make_system(*, fair: bool = True) -> Specification:
     return Specification(
         state=State,
         init=init,

@@ -6,10 +6,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Annotated
 
 from tlacraftpy import (
+    CheckResult,
     MaxLen,
     Specification,
     SpecificationError,
@@ -33,6 +35,7 @@ from tlacraftpy import (
     unchanged,
     weak_fairness,
 )
+from tlacraftpy.model import Definition
 from tlacraftpy.runner import parse_trace, resolve_tools
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
@@ -50,40 +53,40 @@ class SmallState:
 
 
 @initial
-def empty(s):
+def empty(s: SmallState) -> bool:
     """Use an empty queue and a known output value."""
     return s.q == () and s.last == Message.A
 
 
 @action
-def put(s, t):
+def put(s: SmallState, t: SmallState) -> bool:
     return len(s.q) < 2 and exists(
         Message, lambda msg: t.q == s.q + (msg,) and unchanged(s.last)
     )
 
 
 @action
-def get(s, t):
+def get(s: SmallState, t: SmallState) -> bool:
     return len(s.q) > 0 and t.last == head(s.q) and t.q == tail(s.q)
 
 
 @invariant
-def bounded(s):
+def bounded(s: SmallState) -> bool:
     return LOWER < len(s.q) <= 2
 
 
 @invariant
-def too_short(s):
+def too_short(s: SmallState) -> bool:
     return len(s.q) < 2
 
 
 @invariant
-def enum_coverage(s):
+def enum_coverage(s: SmallState) -> bool:
     return forall(Message, lambda msg: exists(Message, lambda item: item == msg))
 
 
 @invariant
-def shadowed_binding(s):
+def shadowed_binding(s: SmallState) -> bool:
     return forall(
         Message,
         lambda msg: exists(Message, lambda msg: msg == Message.A) and msg == msg,
@@ -91,12 +94,12 @@ def shadowed_binding(s):
 
 
 @invariant
-def impossible(s):
+def impossible(s: SmallState) -> bool:
     return forall(Message, lambda msg: s.last == msg)
 
 
 @temporal
-def each_head_served(s):
+def each_head_served(s: SmallState) -> bool:
     return forall(
         Message,
         lambda msg: leads_to(len(s.q) > 0 and head(s.q) == msg, s.last == msg),
@@ -104,22 +107,22 @@ def each_head_served(s):
 
 
 @action
-def bad_append(s, t):
+def bad_append(s: SmallState, t: SmallState) -> bool:
     return t.q == append(s.q, Bit.One) and unchanged(s.last)
 
 
 @action
-def bad_concat(s, t):
+def bad_concat(s: SmallState, t: SmallState) -> bool:
     return t.q == s.q + (Bit.One,) and unchanged(s.last)
 
 
 @action
-def bad_length(s, t):
+def bad_length(s: SmallState, t: SmallState) -> bool:
     return len(s.last) > 0 and unchanged(s.q) and unchanged(s.last)
 
 
 @action
-def bad_domain(s, t):
+def bad_domain(s: SmallState, t: SmallState) -> bool:
     return exists(Bit, lambda msg: t.last == msg) and unchanged(s.q)
 
 
@@ -129,7 +132,7 @@ def bad_predicate(s, t):
 
 
 @action
-def bad_shadow(s, t):
+def bad_shadow(s: SmallState, t: SmallState) -> bool:
     return exists(Message, lambda s: s == Message.A) and unchanged(s.q)
 
 
@@ -139,7 +142,7 @@ def bad_arity(s, t):
 
 
 @action
-def bad_sequence(s, t):
+def bad_sequence(s: SmallState, t: SmallState) -> bool:
     return t.q == (Message.A, Bit.One) and unchanged(s.last)
 
 
@@ -152,12 +155,12 @@ def bad_bound_domain(s, t):
 
 
 @invariant
-def action_in_invariant(s):
+def action_in_invariant(s: SmallState) -> bool:
     return unchanged(s.q)
 
 
 @action
-def drop_rest(s, t):
+def drop_rest(s: fifo.State, t: fifo.State) -> bool:
     return (
         len(s.q) > 0
         and s.out_ready == s.out_ack
@@ -171,11 +174,16 @@ def drop_rest(s, t):
     )
 
 
-def small_system():
+def small_system() -> Specification:
     return Specification(SmallState, empty, any_action(put, get))
 
 
-def graph(path, canonical):
+_GraphState = tuple[str | tuple[str, ...], ...]
+
+
+def graph(
+    path: Path, canonical: Callable[[dict[str, str]], _GraphState]
+) -> tuple[set[_GraphState], set[_GraphState], set[tuple[_GraphState, _GraphState]]]:
     nodes, initial_states, edges = {}, set(), []
     for line in path.read_text().splitlines():
         node = re.match(r'^(-?\d+) \[label=("(?:\\.|[^"\\])*")', line)
@@ -195,8 +203,8 @@ def graph(path, canonical):
     return set(nodes.values()), initial_states, {(nodes[a], nodes[b]) for a, b in edges}
 
 
-def original_state(values):
-    def channel(value):
+def original_state(values: dict[str, str]) -> _GraphState:
+    def channel(value: str) -> tuple[str, str, str]:
         match = re.fullmatch(
             r"\[val \|-> Msg([AB]), rdy \|-> ([01]), ack \|-> ([01])\]", value
         )
@@ -211,14 +219,14 @@ def original_state(values):
     )
 
 
-def port_state(values):
+def port_state(values: dict[str, str]) -> _GraphState:
     scalar = {"E0M0": "A", "E0M1": "B", "E1M0": "0", "E1M1": "1"}
     q = tuple(scalar[x] for x in re.findall(r"E\d+M\d+", values["v6"]))
     return (*(scalar[values[f"v{i}"]] for i in range(6)), q)
 
 
 class SequenceCompilerTests(unittest.TestCase):
-    def test_annotations_and_expression_types(self):
+    def test_annotations_and_expression_types(self) -> None:
         compiled = compile_spec(small_system(), invariants=[bounded, enum_coverage])
         self.assertIn("UNION {[1..n ->", compiled.tla)
         self.assertIn("\\o", compiled.tla)
@@ -232,7 +240,7 @@ class SequenceCompilerTests(unittest.TestCase):
             "\\E b1", compile_spec(small_system(), invariants=[shadowed_binding]).tla
         )
 
-    def test_invalid_domains(self):
+    def test_invalid_domains(self) -> None:
         for value in (-1, True, 1.5):
             with self.subTest(value=value), self.assertRaises(SpecificationError):
                 MaxLen(value)
@@ -261,7 +269,7 @@ class SequenceCompilerTests(unittest.TestCase):
         )
         compile_spec(Specification(zero, empty, any_action(put)))
 
-    def test_invalid_expressions(self):
+    def test_invalid_expressions(self) -> None:
         for definition in (
             bad_append,
             bad_concat,
@@ -283,7 +291,7 @@ class SequenceCompilerTests(unittest.TestCase):
         with self.assertRaises(SpecificationError):
             compile_spec(small_system(), invariants=[empty])
 
-    def test_dsl_markers_raise_on_direct_calls(self):
+    def test_dsl_markers_raise_on_direct_calls(self) -> None:
         for operator in (append, head, tail, exists, forall):
             with (
                 self.subTest(operator=operator.__name__),
@@ -291,7 +299,7 @@ class SequenceCompilerTests(unittest.TestCase):
             ):
                 operator()
 
-    def test_sequence_trace_decoding(self):
+    def test_sequence_trace_decoding(self) -> None:
         mapping = compile_spec(small_system()).mapping
         output = """1: <Initial predicate>
 /\\ v0 = <<E0M0,
@@ -314,7 +322,14 @@ class SequenceCompilerTests(unittest.TestCase):
     os.environ.get("TLACRAFTPY_TLC_JAR"), "set TLACRAFTPY_TLC_JAR to run TLC"
 )
 class FIFOIntegrationTests(unittest.TestCase):
-    def check_model(self, system, directory, **kwargs):
+    def check_model(
+        self,
+        system: Specification,
+        directory: str,
+        *,
+        properties: Iterable[Definition] = (),
+        invariants: Iterable[Definition] = (),
+    ) -> CheckResult:
         try:
             return check(
                 system,
@@ -322,12 +337,13 @@ class FIFOIntegrationTests(unittest.TestCase):
                 output_dir=directory,
                 timeout=60,
                 verbose=False,
-                **kwargs,
+                properties=properties,
+                invariants=invariants,
             )
         except TLCError as exc:
             self.fail(f"{exc}\n{(Path(directory) / 'tlc.log').read_text()}")
 
-    def test_sequence_operations_and_invariant_counterexample(self):
+    def test_sequence_operations_and_invariant_counterexample(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = self.check_model(
                 small_system(),
@@ -355,7 +371,7 @@ class FIFOIntegrationTests(unittest.TestCase):
             self.assertEqual(result.counterexample.states[0].values["q"], "()")
             self.assertIn(", ", result.counterexample.states[-1].values["q"])
 
-    def test_fifo_progress_and_stuttering_counterexample(self):
+    def test_fifo_progress_and_stuttering_counterexample(self) -> None:
         for fair, expected in ((True, Status.Passed), (False, Status.Violated)):
             with self.subTest(fair=fair), tempfile.TemporaryDirectory() as directory:
                 result = self.check_model(
@@ -370,7 +386,9 @@ class FIFOIntegrationTests(unittest.TestCase):
                     self.assertIsNotNone(result.counterexample.loop_start)
                     self.assertIn("q", result.counterexample.states[-1].values)
 
-    def run_dump(self, directory, module, cfg, java, jar):
+    def run_dump(
+        self, directory: Path, module: str, cfg: str, java: str, jar: Path
+    ) -> Path:
         run = subprocess.run(
             [
                 java,
@@ -399,7 +417,7 @@ class FIFOIntegrationTests(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         return directory / "graph.dot"
 
-    def test_state_graph_matches_upstream_and_detects_dropped_messages(self):
+    def test_state_graph_matches_upstream_and_detects_dropped_messages(self) -> None:
         fixtures = Path(__file__).parent / "fixtures/fifo"
         java, jar = resolve_tools(Path(fifo.__file__), os.environ["TLACRAFTPY_TLC_JAR"])
         with tempfile.TemporaryDirectory() as directory:

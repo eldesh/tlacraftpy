@@ -28,13 +28,21 @@ Documentation = "https://github.com/eldesh/tlacraftpy/tree/master/docs"
 Issues = "https://github.com/eldesh/tlacraftpy/issues"
 
 [project.optional-dependencies]
-dev = ["ruff==0.17.3"]
+dev = ["ruff==0.17.3", "mypy==2.4.1"]
 release = ["build==1.6.1", "twine==7.0.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["tlacraftpy*"]
 namespaces = false
+
+[tool.setuptools.package-data]
+tlacraftpy = ["py.typed"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/tlacraftpy", "examples"]
+strict = true
 
 [tool.ruff]
 target-version = "py311"

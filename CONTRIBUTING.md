@@ -33,6 +33,15 @@ Google形式のdocstringチェックは、次のコマンドで実行します�
 ruff check --select D src/tlacraftpy
 ```
 
+## 型チェック
+
+ライブラリ本体とサンプルの型注釈をmypyで検査します。
+検査対象とstrictモードの設定は`pyproject.toml`の`[tool.mypy]`にあります。
+
+```bash
+mypy
+```
+
 ## テスト
 
 Javaと[TLC 1.7.4のJAR](https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar)を用意し、
@@ -54,7 +63,8 @@ TLCがエラーを返した場合は、テストの出力にTLCのログを表�
 [Testsワークフロー](.github/workflows/tests.yml)は、pushとpull requestを契機に実行します。
 Actions画面のRun workflowからも起動できます。
 
-Python formattingジョブで、Ruffによるフォーマットチェックを実行します。
+Python formatting and typesジョブで、Ruffによるフォーマット・docstringのチェックと、
+mypyによる型チェックを実行します。
 
 Python 3.11・3.12・3.13・3.14、Java 21、TLC 1.7.4を使い、配布物のビルド・検査とwheelのインストール、
 単体テスト、TLC統合テスト、要求・応答とFIFOのサンプルの実行を確認します。

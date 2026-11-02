@@ -1,8 +1,23 @@
 """Declare state domains, specification expressions, actions, and fairness."""
 
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated, Callable, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    NoReturn,
+    TypeGuard,
+    TypeVar,
+    get_args,
+    get_origin,
+    get_type_hints,
+    overload,
+)
+
+_State = TypeVar("_State")
+_Element = TypeVar("_Element", bound=Enum)
 
 
 class SpecificationError(ValueError):
@@ -60,11 +75,11 @@ class Definition:
     source and raises ``SpecificationError`` for invalid definitions.
     """
 
-    fn: Callable
+    fn: Callable[..., bool]
     kind: str
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Return the registered Python function's name.
 
         Returns:
@@ -73,7 +88,7 @@ class Definition:
         return self.fn.__name__
 
 
-def initial(fn):
+def initial(fn: Callable[..., bool]) -> Definition:
     """Register a predicate describing the allowed initial states.
 
     Args:
@@ -94,7 +109,7 @@ def initial(fn):
     return Definition(fn, "initial")
 
 
-def action(fn):
+def action(fn: Callable[..., bool]) -> Definition:
     """Register a relation between the current state and the next state.
 
     Args:
@@ -116,7 +131,7 @@ def action(fn):
     return Definition(fn, "action")
 
 
-def temporal(fn):
+def temporal(fn: Callable[..., bool]) -> Definition:
     """Register a property about an infinite sequence of states.
 
     Args:
@@ -153,7 +168,7 @@ class MaxLen:
 
     value: int
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate the finite sequence bound.
 
         Raises:
@@ -165,15 +180,15 @@ class MaxLen:
 
 @dataclass(frozen=True)
 class _SequenceDomain:
-    element: object
+    element: type[Enum] | None
     max_length: int | None = None
 
 
-def _enum_domain(domain):
+def _enum_domain(domain: object) -> TypeGuard[type[Enum]]:
     return isinstance(domain, type) and issubclass(domain, Enum) and bool(list(domain))
 
 
-def _field_domain(annotation):
+def _field_domain(annotation: object) -> type[Enum] | _SequenceDomain:
     if _enum_domain(annotation):
         return annotation
     if get_origin(annotation) is Annotated:
@@ -193,7 +208,7 @@ def _field_domain(annotation):
     )
 
 
-def invariant(fn):
+def invariant(fn: Callable[..., bool]) -> Definition:
     """Register a state predicate that must hold in every reachable state.
 
     Args:
@@ -208,7 +223,7 @@ def invariant(fn):
     return Definition(fn, "invariant")
 
 
-def state(cls):
+def state(cls: type[_State]) -> type[_State]:
     """Declare state fields and their finite domains.
 
     Args:
@@ -241,15 +256,15 @@ def state(cls):
             fields[name] = _field_domain(domain)
         except SpecificationError as exc:
             raise SpecificationError(f"{name}: {exc}") from exc
-    cls.__tlacraftpy_fields__ = dict(fields)
+    setattr(cls, "__tlacraftpy_fields__", dict(fields))
     return cls
 
 
-def _syntax_only(*args, **kwargs):
+def _syntax_only(*args: object, **kwargs: object) -> NoReturn:
     raise SpecificationError("DSL operators may only occur in specification source")
 
 
-def unchanged(*args):
+def unchanged(*args: object) -> bool:
     """Express that an action preserves a current-state field's value.
 
     The compiler interprets this call in an ``@action`` return expression as
@@ -270,7 +285,7 @@ def unchanged(*args):
     return _syntax_only(*args)
 
 
-def unconstrained(*args):
+def unconstrained(*args: object) -> bool:
     """Express an intentional choice from a field's entire next-state domain.
 
     In an ``@action`` return expression, this marker contributes ``TRUE`` and
@@ -292,7 +307,7 @@ def unconstrained(*args):
     return _syntax_only(*args)
 
 
-def leads_to(*args):
+def leads_to(*args: bool) -> bool:
     """Express that each occurrence of a condition eventually gets a response.
 
     In ``@temporal`` source, ``leads_to(P, Q)`` means that whenever ``P`` holds,
@@ -310,7 +325,7 @@ def leads_to(*args):
     return _syntax_only(*args)
 
 
-def head(*args):
+def head(*args: tuple[_Element, ...]) -> _Element:
     """Select the first element of a specification sequence.
 
     Args:
@@ -324,7 +339,7 @@ def head(*args):
     return _syntax_only(*args)
 
 
-def tail(*args):
+def tail(*args: tuple[_Element, ...]) -> tuple[_Element, ...]:
     """Select the sequence after removing its first element.
 
     Args:
@@ -337,7 +352,7 @@ def tail(*args):
     return _syntax_only(*args)
 
 
-def append(*args):
+def append(*args: tuple[_Element, ...] | _Element) -> tuple[_Element, ...]:
     """Add an Enum value to the end of a specification sequence.
 
     Args:
@@ -350,7 +365,17 @@ def append(*args):
     return _syntax_only(*args)
 
 
-def exists(*args):
+@overload
+def exists(
+    domain: type[_Element], predicate: Callable[[_Element], bool], /
+) -> bool: ...
+
+
+@overload
+def exists() -> NoReturn: ...
+
+
+def exists(*args: object) -> bool:
     """Express existential quantification over a declared Enum domain.
 
     Args:
@@ -364,7 +389,17 @@ def exists(*args):
     return _syntax_only(*args)
 
 
-def forall(*args):
+@overload
+def forall(
+    domain: type[_Element], predicate: Callable[[_Element], bool], /
+) -> bool: ...
+
+
+@overload
+def forall() -> NoReturn: ...
+
+
+def forall(*args: object) -> bool:
     """Express universal quantification over a declared Enum domain.
 
     Args:
@@ -378,7 +413,7 @@ def forall(*args):
     return _syntax_only(*args)
 
 
-def any_action(*actions):
+def any_action(*actions: Definition) -> tuple[Definition, ...]:
     """Combine actions as alternatives for the next state.
 
     Args:
@@ -414,7 +449,7 @@ class WeakFairness:
     action: Definition
 
 
-def weak_fairness(a):
+def weak_fairness(a: Definition) -> WeakFairness:
     """Require progress for a continuously enabled non-stuttering action.
 
     If, from some point on, the action remains enabled for a state-changing
@@ -458,10 +493,10 @@ class Specification:
 
     state: type
     init: Definition
-    next: tuple[Definition, ...]
-    fairness: tuple[WeakFairness, ...] = ()
+    next: Iterable[Definition]
+    fairness: Iterable[WeakFairness] = ()
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Normalize iterables and validate the registered declarations.
 
         Raises:
@@ -474,10 +509,11 @@ class Specification:
             raise SpecificationError("state must be an @state class")
         if not isinstance(self.init, Definition) or self.init.kind != "initial":
             raise SpecificationError("init must be an @initial definition")
-        object.__setattr__(self, "next", tuple(self.next))
+        actions = tuple(self.next)
+        object.__setattr__(self, "next", actions)
         object.__setattr__(self, "fairness", tuple(self.fairness))
         any_action(*self.next)
-        if len({id(a) for a in self.next}) != len(self.next):
+        if len({id(a) for a in self.next}) != len(actions):
             raise SpecificationError("Duplicate next action")
         for fair in self.fairness:
             if not isinstance(fair, WeakFairness) or not any(

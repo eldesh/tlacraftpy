@@ -1,14 +1,20 @@
 """Translate specification ASTs into typed expressions and TLA+."""
 
+from __future__ import annotations
+
 import ast
 import inspect
 import json
 import re
 import textwrap
 import warnings
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
+from os import PathLike
 from pathlib import Path
+from types import FunctionType
+from typing import NoReturn, TypeAlias, cast
 
 from .model import (
     Definition,
@@ -27,7 +33,13 @@ from .model import (
 )
 
 
-def _compatible(left, right):
+_FieldDomain: TypeAlias = type[Enum] | _SequenceDomain
+_ExpressionDomain: TypeAlias = type[bool] | type[int] | _FieldDomain
+_Atoms: TypeAlias = Mapping[tuple[type[Enum], str], str]
+_NameMapping: TypeAlias = dict[str, dict[str, str]]
+
+
+def _compatible(left: _ExpressionDomain, right: _ExpressionDomain) -> bool:
     if left is right:
         return True
     return (
@@ -41,8 +53,9 @@ def _compatible(left, right):
     )
 
 
-def _domain_text(domain, atoms):
+def _domain_text(domain: _FieldDomain, atoms: _Atoms) -> str:
     if isinstance(domain, _SequenceDomain):
+        assert domain.element is not None
         elements = _domain_text(domain.element, atoms)
         return f"UNION {{[1..n -> {elements}] : n \\in 0..{domain.max_length}}}"
     return "{" + ", ".join(atoms[domain, m.name] for m in domain) + "}"
@@ -60,7 +73,7 @@ class Expression:
     """
 
     text: str
-    type: object
+    type: _ExpressionDomain
     level: int = 0  # constant=0, state=1, action=2, temporal=3
     covered: frozenset[str] = frozenset()
 
@@ -79,7 +92,13 @@ class Parser:
             single-return-expression structure cannot be resolved.
     """
 
-    def __init__(self, definition, fields, variables, atoms):
+    def __init__(
+        self,
+        definition: Definition,
+        fields: Mapping[str, _FieldDomain],
+        variables: Mapping[str, str],
+        atoms: _Atoms,
+    ) -> None:
         """Load source and prepare the parameter and Enum name bindings.
 
         Args:
@@ -95,14 +114,15 @@ class Parser:
         self.fields = fields
         self.variables = variables
         self.atoms = atoms
-        fn = definition.fn
-        self.filename = inspect.getsourcefile(fn)
+        fn = cast(FunctionType, definition.fn)
+        filename = inspect.getsourcefile(fn)
         if (
-            not self.filename
-            or Path(self.filename).suffix != ".py"
-            or not Path(self.filename).is_file()
+            not filename
+            or Path(filename).suffix != ".py"
+            or not Path(filename).is_file()
         ):
             raise SpecificationError(f"{definition.name}: source must be in a .py file")
+        self.filename = filename
         try:
             source, self.start = inspect.getsourcelines(fn)
             tree = ast.parse(textwrap.dedent("".join(source)))
@@ -128,9 +148,9 @@ class Parser:
                 self.node, f"expected exactly {count} positional state parameter(s)"
             )
         self.params = [a.arg for a in args.posonlyargs + args.args]
-        self.env = dict(fn.__globals__)
-        self.builtins = fn.__builtins__
-        self.bindings = {}
+        self.env: dict[str, object] = dict(fn.__globals__)
+        self.builtins = cast(dict[str, object], getattr(fn, "__builtins__"))
+        self.bindings: dict[str, Expression] = {}
         self.binding_count = 0
         try:
             self.env.update(inspect.getclosurevars(fn).nonlocals)
@@ -152,7 +172,7 @@ class Parser:
             self.fail(self.node, "only a single return expression is supported")
         self.body = body[0].value
 
-    def fail(self, node, message):
+    def fail(self, node: ast.AST, message: str) -> NoReturn:
         """Report a compilation error at a source node.
 
         Args:
@@ -167,7 +187,7 @@ class Parser:
             f"{self.filename}:{line}: {self.definition.name}: {message}"
         )
 
-    def field(self, node, current_only=False):
+    def field(self, node: ast.AST, current_only: bool = False) -> tuple[str, int]:
         """Resolve a state-field reference and its state parameter.
 
         Args:
@@ -193,7 +213,7 @@ class Parser:
             self.fail(node, "expected a current-state field")
         return node.attr, index
 
-    def boolean(self, expr, node):
+    def boolean(self, expr: Expression, node: ast.AST) -> None:
         """Require an expression to have the Boolean domain.
 
         Args:
@@ -206,7 +226,7 @@ class Parser:
         if expr.type is not bool:
             self.fail(node, "expected a Boolean expression")
 
-    def parse(self):
+    def parse(self) -> Expression:
         """Translate and validate the registered function's return expression.
 
         Returns:
@@ -224,7 +244,7 @@ class Parser:
             self.fail(self.body, "@temporal requires a temporal expression (leads_to)")
         return expr
 
-    def expr(self, node):
+    def expr(self, node: ast.expr) -> Expression:
         """Translate an expression node into TLA+ syntax.
 
         Args:
@@ -257,7 +277,7 @@ class Parser:
                 self.fail(node, "sequence literals require members of one Enum")
             return Expression(
                 "<<" + ", ".join(value.text for value in values) + ">>",
-                _SequenceDomain(element),
+                _SequenceDomain(cast(type[Enum] | None, element)),
                 max((value.level for value in values), default=0),
                 frozenset().union(*(value.covered for value in values)),
             )
@@ -297,7 +317,7 @@ class Parser:
             for left, op, right in zip(values, node.ops, values[1:]):
                 if not _compatible(left.type, right.type):
                     self.fail(node, "comparison requires values from the same domain")
-                operators = {ast.Eq: "=", ast.NotEq: "#"}
+                operators: dict[type[ast.cmpop], str] = {ast.Eq: "=", ast.NotEq: "#"}
                 if left.type is int:
                     operators.update(
                         {ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">="}
@@ -306,8 +326,8 @@ class Parser:
                     self.fail(node, "ordering comparisons require integer expressions")
                 if max(left.level, right.level) == 3:
                     self.fail(node, "temporal expressions cannot be compared")
-                operator = operators[type(op)]
-                pieces.append(f"({left.text} {operator} {right.text})")
+                comparison_operator = operators[type(op)]
+                pieces.append(f"({left.text} {comparison_operator} {right.text})")
             return Expression(
                 "(" + " /\\ ".join(pieces) + ")",
                 bool,
@@ -319,15 +339,15 @@ class Parser:
             for value in values:
                 self.boolean(value, node)
             if isinstance(node.op, ast.And):
-                operator = " /\\ "
+                boolean_operator = " /\\ "
                 covered = frozenset().union(*(v.covered for v in values))
             else:
-                operator = " \\/ "
+                boolean_operator = " \\/ "
                 covered = values[0].covered.intersection(
                     *(v.covered for v in values[1:])
                 )
             return Expression(
-                "(" + operator.join(v.text for v in values) + ")",
+                "(" + boolean_operator.join(v.text for v in values) + ")",
                 bool,
                 max(v.level for v in values),
                 covered,
@@ -351,7 +371,8 @@ class Parser:
             if operator is exists or operator is forall:
                 if len(node.args) != 2 or not isinstance(node.args[0], ast.Name):
                     self.fail(node, "quantification requires an Enum and a lambda")
-                domain_name, predicate = node.args
+                domain_name = node.args[0]
+                predicate = node.args[1]
                 if domain_name.id in self.params or domain_name.id in self.bindings:
                     self.fail(
                         domain_name, "quantifier domain must name a global Enum class"
@@ -410,17 +431,17 @@ class Parser:
                 if not isinstance(sequence.type, _SequenceDomain):
                     self.fail(node, "expected a sequence expression")
                 if operator is append:
-                    element = values[1]
-                    if not isinstance(element.type, type) or not issubclass(
-                        element.type, Enum
+                    appended = values[1]
+                    if not isinstance(appended.type, type) or not issubclass(
+                        appended.type, Enum
                     ):
                         self.fail(node, "Append requires an Enum element")
                     if (
                         sequence.type.element is not None
-                        and sequence.type.element is not element.type
+                        and sequence.type.element is not appended.type
                     ):
                         self.fail(node, "Append element belongs to a different domain")
-                    result_type = _SequenceDomain(element.type)
+                    result_type: _ExpressionDomain = _SequenceDomain(appended.type)
                 elif operator is len:
                     result_type = int
                 elif operator is head:
@@ -483,7 +504,7 @@ class Compiled:
     module: str
     tla: str
     cfg: str
-    mapping: dict
+    mapping: _NameMapping
     source: Path
 
 
@@ -508,7 +529,13 @@ class Artifacts:
     compiled: Compiled
 
 
-def compile_spec(spec: Specification, *, properties=(), invariants=(), module="Model"):
+def compile_spec(
+    spec: Specification,
+    *,
+    properties: Iterable[Definition] = (),
+    invariants: Iterable[Definition] = (),
+    module: str = "Model",
+) -> Compiled:
     """Translate a specification and temporal properties into TLA+ text.
 
     Args:
@@ -539,11 +566,14 @@ def compile_spec(spec: Specification, *, properties=(), invariants=(), module="M
         raise SpecificationError("properties must be @temporal definitions")
     if any(not isinstance(p, Definition) or p.kind != "invariant" for p in invariants):
         raise SpecificationError("invariants must be @invariant definitions")
-    fields = spec.state.__tlacraftpy_fields__
+    fields = cast(dict[str, _FieldDomain], getattr(spec.state, "__tlacraftpy_fields__"))
+    actions = tuple(spec.next)
     variables = {name: f"v{i}" for i, name in enumerate(fields)}
     domains = list(
         dict.fromkeys(
-            domain.element if isinstance(domain, _SequenceDomain) else domain
+            cast(type[Enum], domain.element)
+            if isinstance(domain, _SequenceDomain)
+            else domain
             for domain in fields.values()
         )
     )
@@ -555,7 +585,7 @@ def compile_spec(spec: Specification, *, properties=(), invariants=(), module="M
     init_parser = Parser(spec.init, fields, variables, atoms)
     init = init_parser.parse()
     action_exprs = []
-    for definition in spec.next:
+    for definition in actions:
         parser = Parser(definition, fields, variables, atoms)
         expression = parser.parse()
         for name in fields:
@@ -592,7 +622,7 @@ def compile_spec(spec: Specification, *, properties=(), invariants=(), module="M
         f"Init == TypeOK /\\ {init.text}",
         "",
     ]
-    for i, (definition, expression) in enumerate(zip(spec.next, action_exprs)):
+    for i, (definition, expression) in enumerate(zip(actions, action_exprs)):
         lines.extend(
             [
                 f"\\* Python action: {definition.name}",
@@ -600,10 +630,10 @@ def compile_spec(spec: Specification, *, properties=(), invariants=(), module="M
                 "",
             ]
         )
-    lines.append("Next == " + " \\/ ".join(f"A{i}" for i in range(len(spec.next))))
+    lines.append("Next == " + " \\/ ".join(f"A{i}" for i in range(len(actions))))
     spec_text = "Init /\\ [][Next]_vars"
     for fair in spec.fairness:
-        index = next(i for i, a in enumerate(spec.next) if a is fair.action)
+        index = next(i for i, a in enumerate(actions) if a is fair.action)
         spec_text += f" /\\ WF_vars(A{index})"
     lines.extend([f"Spec == {spec_text}", ""])
     for i, (prop, expression) in enumerate(zip(properties, prop_exprs)):
@@ -629,7 +659,7 @@ def compile_spec(spec: Specification, *, properties=(), invariants=(), module="M
             symbol: f"{domain.__name__}.{name}"
             for (domain, name), symbol in atoms.items()
         },
-        "actions": {f"A{i}": a.name for i, a in enumerate(spec.next)},
+        "actions": {f"A{i}": a.name for i, a in enumerate(actions)},
         "properties": {f"P{i}": p.name for i, p in enumerate(properties)},
         "invariants": {f"I{i}": p.name for i, p in enumerate(invariants)},
     }
@@ -642,7 +672,7 @@ def compile_spec(spec: Specification, *, properties=(), invariants=(), module="M
     )
 
 
-def project_root(source: Path):
+def project_root(source: Path) -> Path:
     """Find the project directory associated with a specification source file.
 
     Args:
@@ -658,7 +688,14 @@ def project_root(source: Path):
     return source.parent
 
 
-def export(spec, *, properties=(), invariants=(), output_dir=None, module="Model"):
+def export(
+    spec: Specification,
+    *,
+    properties: Iterable[Definition] = (),
+    invariants: Iterable[Definition] = (),
+    output_dir: str | PathLike[str] | None = None,
+    module: str = "Model",
+) -> Artifacts:
     """Write a specification's TLA+ module, TLC configuration, and name mappings.
 
     Args:
