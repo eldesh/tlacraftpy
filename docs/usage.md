@@ -125,7 +125,7 @@ elif result.status is Status.Incomplete:
     print(result.reason)
 ```
 
-`property_name`は違反した不変条件のPython名、または検証対象が一つの場合の時相的な性質のPython名です。
+`property_name`は違反した不変条件または時相的な性質のPython名です。
 `None`は性質名が未特定であることを表します。
 `reason`には、時間制限や中断の理由を格納します。
 `verbose=False`を指定すると、呼び出し元で表示方法を決められます。
@@ -136,7 +136,8 @@ elif result.status is Status.Incomplete:
 列の値は`(Message.A, Message.B)`のようなタプル記法で表示します。
 
 不変条件の反例は違反状態までの有限列です。
-時相的な性質の反例には、繰り返しの戻り先を示す`loop_start`があります。
+時相的な性質では、`until`の待機条件が途中で破れる場合のように、有限列で違反を示せることもあります。
+いつか成立すべき条件が成立しない反例には、繰り返しの戻り先を示す`loop_start`があります。
 `stuttering=True`は、末尾の状態を保持する繰り返しを表します。
 `print(result.counterexample)`で状態列と戻り先をまとめて表示できます。
 

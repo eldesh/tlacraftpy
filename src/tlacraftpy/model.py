@@ -136,7 +136,8 @@ def temporal(fn: Callable[..., bool]) -> Definition:
 
     Args:
         fn: Function with one current-state parameter whose return expression
-            contains ``leads_to``. The function must be defined in a ``.py`` file.
+            contains ``leads_to`` or ``until``. The function must be defined in
+            a ``.py`` file.
 
     Returns:
         Definition: Temporal property accepted by ``properties`` in compilation,
@@ -321,6 +322,30 @@ def leads_to(*args: bool) -> bool:
         SpecificationError: If called directly as Python code. Compilation also
             raises this exception for arguments other than two state predicates
             or for use outside a temporal property.
+    """
+    return _syntax_only(*args)
+
+
+def until(*args: bool) -> bool:
+    """Require a condition to hold until another condition eventually holds.
+
+    In ``@temporal`` source, ``until(P, Q)`` requires ``Q`` at some position
+    starting from the initial state, and ``P`` at every earlier position.
+    ``P`` need not hold at the first position where ``Q`` holds or afterward.
+
+    Args:
+        *args: Exactly two Boolean state predicates: the condition ``P`` to
+            preserve, followed by the eventual condition ``Q``.
+
+    Raises:
+        SpecificationError: If called directly as Python code. Compilation also
+            raises this exception for arguments other than two state predicates
+            or for use outside a temporal property.
+
+    Examples:
+        >>> @temporal
+        ... def waits_for_response(s: State) -> bool:
+        ...     return until(s.phase == Phase.Requested, s.phase == Phase.Responded)
     """
     return _syntax_only(*args)
 

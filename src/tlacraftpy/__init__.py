@@ -21,6 +21,7 @@ from .model import (
     tail,
     unconstrained,
     unchanged,
+    until,
     weak_fairness,
 )
 from .compiler import Artifacts, Compiled, compile_spec, export
@@ -47,6 +48,7 @@ __all__ = [
     "tail",
     "unconstrained",
     "unchanged",
+    "until",
     "weak_fairness",
     "Artifacts",
     "Compiled",

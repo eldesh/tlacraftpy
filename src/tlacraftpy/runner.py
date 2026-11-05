@@ -66,7 +66,8 @@ class Counterexample:
             values. Defaults to ``False``.
 
     ``str(counterexample)`` formats the states and the repetition target for
-    display. Temporal counterexamples returned by ``check`` include a loop.
+    display. Liveness counterexamples include a loop. Safety counterexamples,
+    including safety parts of temporal properties, contain a finite state prefix.
     """
 
     states: tuple[TraceState, ...]
@@ -98,9 +99,8 @@ class CheckResult:
         artifacts: Generated specification, configuration, mapping, and log paths.
         counterexample: Trace supplied for an invariant or temporal-property violation;
             defaults to ``None``.
-        property_name: Python name of the violated invariant, or the violated
-            temporal property when exactly one was checked. ``None`` means the
-            name is unspecified.
+        property_name: Python name of the violated invariant or temporal property,
+            when identifiable. ``None`` means the name is unspecified.
         reason: Explanation of an interruption or timeout, when applicable.
 
     ``str(result)`` formats the outcome, property name, reason, and trace for
@@ -216,7 +216,7 @@ def parse_trace(output: str, mapping: _NameMapping) -> Counterexample:
 
     for line in lines:
         stripped = line.strip()
-        if re.match(r"^Invariant I\d+ is violated by the initial state:", stripped):
+        if re.match(r"^Invariant .+ is violated by the initial state:", stripped):
             flush()
             current_number, label = 1, "<Initial predicate>"
             continue
@@ -269,7 +269,7 @@ def classify(output: str, returncode: int, artifacts: Artifacts) -> CheckResult:
 
     Raises:
         TLCError: If TLC reports an execution error, its result is unrecognized,
-            or a temporal counterexample cannot be decoded with a loop.
+            or a liveness counterexample cannot be decoded with a loop.
     """
     violated = "Temporal properties were violated" in output
     invariant_match = re.search(r"\bInvariant (I\d+) is violated\b", output)
@@ -277,6 +277,37 @@ def classify(output: str, returncode: int, artifacts: Artifacts) -> CheckResult:
         name = artifacts.compiled.mapping.get("invariants", {}).get(invariant_match[1])
         if name is None:
             raise TLCError("Unknown invariant in TLC output; see tlc.log")
+        return CheckResult(
+            Status.Violated,
+            artifacts,
+            parse_trace(output, artifacts.compiled.mapping),
+            name,
+        )
+    # TLC extracts safety conjuncts such as []P from temporal properties and
+    # identifies them by their generated source location instead of a Pn name.
+    safety_match = re.search(
+        r"\bInvariant line (\d+), col \d+ to line (\d+), col \d+ of module "
+        + re.escape(artifacts.compiled.module)
+        + r" is violated(?:\.| by the initial state:)",
+        output,
+    )
+    if safety_match:
+        line, end_line = map(int, safety_match.groups())
+        source_lines = artifacts.compiled.tla.splitlines()
+        declaration = (
+            re.match(r"(P\d+) == ", source_lines[line - 1])
+            if line == end_line and 1 <= line <= len(source_lines)
+            else None
+        )
+        name = (
+            artifacts.compiled.mapping["properties"].get(declaration[1])
+            if declaration is not None
+            else None
+        )
+        if name is None:
+            raise TLCError(
+                "Unknown temporal safety property in TLC output; see tlc.log"
+            )
         return CheckResult(
             Status.Violated,
             artifacts,
@@ -407,8 +438,8 @@ def check(
     Returns:
         CheckResult: Verification status, generated file paths, and any
         counterexample. Timeouts and reported interruptions produce Incomplete;
-        invariant violations produce a finite trace and temporal-property
-        violations produce a repeating trace, both with status Violated.
+        invariant and temporal safety violations produce a finite trace; liveness
+        violations produce a repeating trace. Both have status Violated.
         Existing generated files and the TLC log at the output paths are replaced.
 
     Raises:

@@ -30,6 +30,7 @@ from .model import (
     tail,
     unchanged,
     unconstrained,
+    until,
 )
 
 
@@ -78,6 +79,31 @@ class Expression:
     covered: frozenset[str] = frozenset()
 
 
+@dataclass(frozen=True)
+class _UntilHistory:
+    """Remember the first satisfaction of Q for each quantifier binding."""
+
+    symbol: str
+    predicate: str
+    bindings: tuple[tuple[str, type[Enum]], ...]
+
+    @property
+    def reference(self) -> str:
+        if not self.bindings:
+            return self.symbol
+        return self.symbol + "[" + ", ".join(name for name, _ in self.bindings) + "]"
+
+
+def _history_value(history: _UntilHistory, expression: str, atoms: _Atoms) -> str:
+    if not history.bindings:
+        return expression
+    domains = ", ".join(
+        f"{name} \\in {_domain_text(domain, atoms)}"
+        for name, domain in history.bindings
+    )
+    return f"[{domains} |-> {expression}]"
+
+
 class Parser:
     """Translate a registered function's source into a typed expression.
 
@@ -86,6 +112,7 @@ class Parser:
         fields: Mapping from state-field names to finite domains.
         variables: Mapping from state-field names to generated TLA+ variables.
         atoms: Mapping from ``(Enum class, canonical member name)`` to model values.
+        histories: Shared collection of generated until history variables.
 
     Raises:
         SpecificationError: If source retrieval, function parameters, or the
@@ -98,6 +125,8 @@ class Parser:
         fields: Mapping[str, _FieldDomain],
         variables: Mapping[str, str],
         atoms: _Atoms,
+        *,
+        histories: list[_UntilHistory] | None = None,
     ) -> None:
         """Load source and prepare the parameter and Enum name bindings.
 
@@ -106,6 +135,7 @@ class Parser:
             fields: State-field names mapped to their finite domains.
             variables: State-field names mapped to generated TLA+ variables.
             atoms: Enum class and member-name pairs mapped to model values.
+            histories: Shared until histories, or a new collection when omitted.
 
         Raises:
             SpecificationError: If source retrieval or function structure fails.
@@ -114,6 +144,7 @@ class Parser:
         self.fields = fields
         self.variables = variables
         self.atoms = atoms
+        self.histories = histories if histories is not None else []
         fn = cast(FunctionType, definition.fn)
         filename = inspect.getsourcefile(fn)
         if (
@@ -241,7 +272,10 @@ class Parser:
         if self.definition.kind == "invariant" and expr.level > 1:
             self.fail(self.body, "@invariant requires a state predicate")
         if self.definition.kind == "temporal" and expr.level != 3:
-            self.fail(self.body, "@temporal requires a temporal expression (leads_to)")
+            self.fail(
+                self.body,
+                "@temporal requires a temporal expression (leads_to or until)",
+            )
         return expr
 
     def expr(self, node: ast.expr) -> Expression:
@@ -459,17 +493,36 @@ class Parser:
                     max(value.level for value in values),
                     frozenset().union(*(value.covered for value in values)),
                 )
-            if operator is leads_to:
+            if operator is leads_to or operator is until:
+                operator_name = "leads_to" if operator is leads_to else "until"
                 if self.definition.kind != "temporal" or len(node.args) != 2:
                     self.fail(
-                        node, "leads_to requires two state predicates in @temporal"
+                        node,
+                        f"{operator_name} requires two state predicates in @temporal",
                     )
                 left, right = [self.expr(n) for n in node.args]
                 for value in (left, right):
                     self.boolean(value, node)
                     if value.level > 1:
-                        self.fail(node, "leads_to arguments must be state predicates")
-                return Expression(f"({left.text} ~> {right.text})", bool, 3)
+                        self.fail(
+                            node, f"{operator_name} arguments must be state predicates"
+                        )
+                if operator is leads_to:
+                    return Expression(f"({left.text} ~> {right.text})", bool, 3)
+                history = _UntilHistory(
+                    f"h{len(self.histories)}",
+                    right.text,
+                    tuple(
+                        (binding.text, cast(type[Enum], binding.type))
+                        for binding in self.bindings.values()
+                    ),
+                )
+                self.histories.append(history)
+                return Expression(
+                    f"((<>({history.reference})) /\\ ([]({history.reference} \\/ ({left.text}))))",
+                    bool,
+                    3,
+                )
             if operator is unchanged or operator is unconstrained:
                 if self.definition.kind != "action" or len(node.args) != 1:
                     self.fail(
@@ -600,7 +653,11 @@ def compile_spec(
                 parser.start + parser.body.lineno - 1,
             )
         action_exprs.append(expression)
-    prop_exprs = [Parser(p, fields, variables, atoms).parse() for p in properties]
+    histories: list[_UntilHistory] = []
+    prop_exprs = [
+        Parser(p, fields, variables, atoms, histories=histories).parse()
+        for p in properties
+    ]
     inv_exprs = [Parser(p, fields, variables, atoms).parse() for p in invariants]
     type_ok = " /\\ ".join(
         f"({variables[name]} \\in {_domain_text(domain, atoms)})"
@@ -610,23 +667,38 @@ def compile_spec(
         f"({variables[name]}' \\in {_domain_text(domain, atoms)})"
         for name, domain in fields.items()
     )
+    all_variables = [*variables.values(), *(history.symbol for history in histories)]
+    history_initials = [
+        f"({history.symbol} = {_history_value(history, history.predicate, atoms)})"
+        for history in histories
+    ]
+    history_updates = [
+        f"({history.symbol}' = "
+        + _history_value(
+            history, f"({history.reference} \\/ ({history.predicate})')", atoms
+        )
+        + ")"
+        for history in histories
+    ]
+    initial_text = " /\\ ".join([init.text, *history_initials])
+    history_update_text = "".join(f" /\\ {update}" for update in history_updates)
     lines = [
         f"---- MODULE {module} ----",
         "EXTENDS Integers, Sequences",
         "",
         "CONSTANTS " + ", ".join(atoms.values()),
-        "VARIABLES " + ", ".join(variables.values()),
+        "VARIABLES " + ", ".join(all_variables),
         "",
-        "vars == <<" + ", ".join(variables.values()) + ">>",
+        "vars == <<" + ", ".join(all_variables) + ">>",
         f"TypeOK == {type_ok}",
-        f"Init == TypeOK /\\ {init.text}",
+        f"Init == TypeOK /\\ {initial_text}",
         "",
     ]
     for i, (definition, expression) in enumerate(zip(actions, action_exprs)):
         lines.extend(
             [
                 f"\\* Python action: {definition.name}",
-                f"A{i} == {next_domains} /\\ {expression.text}",
+                f"A{i} == {next_domains} /\\ {expression.text}{history_update_text}",
                 "",
             ]
         )
