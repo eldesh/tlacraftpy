@@ -323,7 +323,11 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(classify(SUCCESS, 0, self.artifacts).status, Status.Passed)
 
     def test_loop_trace(self) -> None:
-        for back in ("Back to state 1: <A1>", "3: Back to state: 1"):
+        for back in (
+            "Back to state 1: <A1>",
+            "3: Back to state: 1",
+            "1: Back to state: <A1 line 12, col 7 to line 12, col 90 of module Model>",
+        ):
             output = STUTTER.replace("3: Stuttering", back)
             trace = parse_trace(output, self.artifacts.compiled.mapping)
             self.assertEqual(trace.loop_start, 1)

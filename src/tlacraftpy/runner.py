@@ -225,6 +225,13 @@ def parse_trace(output: str, mapping: _NameMapping) -> Counterexample:
             flush()
             loop_start = int(back[1])
             continue
+        # In TLC's -tool format the target can precede the message, with the
+        # transition label after the colon rather than another state number.
+        tool_back = re.match(r"^(\d+):\s*Back to state:\s*<.*>$", stripped, re.I)
+        if tool_back:
+            flush()
+            loop_start = int(tool_back[1])
+            continue
         header = re.match(r"^(?:State\s+)?(\d+):\s*(.*)$", stripped)
         if header:
             flush()
