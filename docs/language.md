@@ -298,9 +298,63 @@ system = Specification(
 `weak_fairness(take)`は、ある時点以降ずっと状態を変える`take`のステップが実行可能なら、
 そのステップが無限回実行されるという弱公平性の仮定です。
 対象には、`next`に登録したものと同じアクション定義を指定します。
-`fairness`の既定値は空で、公平性を追加する場合に仮定を列挙します。
+`strong_fairness(take)`は、状態を変える`take`のステップが無限回実行可能になるなら、
+そのステップが無限回実行されるという強公平性の仮定です。
+実行可能と実行不可能を繰り返す場合、弱公平性では実行を要求せず、強公平性では実行を要求します。
+アクションごとに異なる公平性を指定できます。
 
-全フィールドの組を`vars`、各アクションの論理和を`Next`とすると、仕様は次のTLA+式に対応します。
+### アクションの既定の公平性
+
+`@action`の上に`@weakly_fair`または`@strongly_fair`を付けると、そのアクションの既定の公平性を指定できます。
+
+```python
+@weakly_fair
+@action
+def take(s: State, t: State) -> bool:
+    return s.q != () and t.q == tail(s.q) and t.last == head(s.q)
+
+
+system = Specification(
+    state=State,
+    init=init,
+    next=any_action(put, take),
+)
+```
+
+`fairness`を省略するか`None`を渡すと、`next`に含まれるアクションの既定値を採用します。
+この例では`weak_fairness(take)`を指定した場合と同じ仮定になります。
+既定値を付けていないアクションには、公平性の仮定を追加しません。
+`@strongly_fair`を付けた場合は、`strong_fairness`に相当する強公平性を採用します。
+一つのアクションには、どちらか一方のデコレータを指定します。
+
+### 仕様ごとの公平性
+
+`fairness`に渡した仮定は、アクションの既定値をすべて置き換えます。
+同じアクションを使って、公平性の異なる仕様を構成できます。
+
+```python
+strong_system = Specification(
+    state=State,
+    init=init,
+    next=any_action(put, take),
+    fairness=[strong_fairness(take)],
+)
+
+unfair_system = Specification(
+    state=State,
+    init=init,
+    next=any_action(put, take),
+    fairness=[],
+)
+```
+
+`strong_system`では`take`に強公平性を仮定し、`unfair_system`では公平性を仮定しません。
+公平性を仮定しない場合は、実行可能なアクションを選ばず、状態全体を保持し続ける実行も検査対象になります。
+
+### TLA+への対応
+
+全フィールドの組を`vars`、各アクションの論理和を`Next`とすると、
+弱公平性を仮定した`system`は次のTLA+式に対応します。
 
 ```tla
 Init /\ [][Next]_vars /\ WF_vars(Take)
@@ -308,6 +362,9 @@ Init /\ [][Next]_vars /\ WF_vars(Take)
 
 ここで`Take`は説明用のアクション名です。
 `[][Next]_vars`が各ステップで`Next`または状態全体の保持を許し、`WF_vars(Take)`が弱公平性を表します。
+強公平性を指定した場合は`SF_vars(Take)`に対応します。
+
+### 検証対象の指定
 
 定義した性質は、次のように検証対象へ指定します。
 

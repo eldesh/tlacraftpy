@@ -20,6 +20,7 @@ from .model import (
     Definition,
     Specification,
     SpecificationError,
+    StrongFairness,
     UnconstrainedWarning,
     _SequenceDomain,
     append,
@@ -706,7 +707,8 @@ def compile_spec(
     spec_text = "Init /\\ [][Next]_vars"
     for fair in spec.fairness:
         index = next(i for i, a in enumerate(actions) if a is fair.action)
-        spec_text += f" /\\ WF_vars(A{index})"
+        operator = "SF" if isinstance(fair, StrongFairness) else "WF"
+        spec_text += f" /\\ {operator}_vars(A{index})"
     lines.extend([f"Spec == {spec_text}", ""])
     for i, (prop, expression) in enumerate(zip(properties, prop_exprs)):
         lines.extend(

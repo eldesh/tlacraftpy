@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from typing import (
     Annotated,
+    Literal,
     NoReturn,
     TypeGuard,
     TypeVar,
@@ -70,6 +71,8 @@ class Definition:
     Args:
         fn: Python function whose source supplies the specification expression.
         kind: Expression category: initial, action, invariant, or temporal.
+        default_fairness: Default fairness attached by ``@weakly_fair`` or
+            ``@strongly_fair``; ``None`` supplies no default assumption.
 
     Decorators create these records. ``compile_spec`` validates the function's
     source and raises ``SpecificationError`` for invalid definitions.
@@ -77,6 +80,7 @@ class Definition:
 
     fn: Callable[..., bool]
     kind: str
+    default_fairness: Literal["weak", "strong"] | None = None
 
     @property
     def name(self) -> str:
@@ -118,7 +122,7 @@ def action(fn: Callable[..., bool]) -> Definition:
             The function must be defined in a ``.py`` file.
 
     Returns:
-        Definition: Action for ``any_action`` and ``weak_fairness``.
+        Definition: Action for ``any_action`` and fairness assumptions.
 
     Source validation occurs in ``compile_spec``, ``export``, or ``check``;
     those calls raise ``SpecificationError`` for an invalid action.
@@ -496,6 +500,92 @@ def weak_fairness(a: Definition) -> WeakFairness:
 
 
 @dataclass(frozen=True)
+class StrongFairness:
+    """Represent strong fairness for a particular action.
+
+    Args:
+        action: Definition of the action subject to strong fairness. Use
+            ``strong_fairness`` to validate the definition when constructing it.
+
+    ``Specification`` raises ``SpecificationError`` if this action is not one of
+    its next-state alternatives.
+    """
+
+    action: Definition
+
+
+def strong_fairness(a: Definition) -> StrongFairness:
+    """Require progress for a non-stuttering action enabled infinitely often.
+
+    If state-changing steps of the action are enabled infinitely often, such
+    steps must occur infinitely often, even if enabledness is intermittent.
+    Compilation uses TLA+'s ``SF_vars`` over the complete state-variable tuple.
+
+    Args:
+        a: Action definition produced by ``@action``.
+
+    Returns:
+        StrongFairness: Fairness assumption for ``Specification.fairness``.
+
+    Raises:
+        SpecificationError: If ``a`` is not an action definition.
+    """
+    if not isinstance(a, Definition) or a.kind != "action":
+        raise SpecificationError("strong_fairness requires an @action")
+    return StrongFairness(a)
+
+
+def _default_fairness(a: Definition, strength: Literal["weak", "strong"]) -> Definition:
+    if not isinstance(a, Definition) or a.kind != "action":
+        raise SpecificationError("Place the fairness decorator above @action")
+    if a.default_fairness is not None and a.default_fairness != strength:
+        raise SpecificationError(
+            "An action cannot have both default fairness strengths"
+        )
+    return (
+        a if a.default_fairness == strength else replace(a, default_fairness=strength)
+    )
+
+
+def weakly_fair(a: Definition) -> Definition:
+    """Attach weak fairness as an action's default assumption.
+
+    Place this decorator above ``@action``. ``Specification`` adopts the
+    assumption when its ``fairness`` argument is omitted or ``None``.
+
+    Args:
+        a: Action definition produced by ``@action``.
+
+    Returns:
+        Definition: Action carrying a weak-fairness default.
+
+    Raises:
+        SpecificationError: If ``a`` is not an action definition or already has
+            a strong-fairness default.
+    """
+    return _default_fairness(a, "weak")
+
+
+def strongly_fair(a: Definition) -> Definition:
+    """Attach strong fairness as an action's default assumption.
+
+    Place this decorator above ``@action``. ``Specification`` adopts the
+    assumption when its ``fairness`` argument is omitted or ``None``.
+
+    Args:
+        a: Action definition produced by ``@action``.
+
+    Returns:
+        Definition: Action carrying a strong-fairness default.
+
+    Raises:
+        SpecificationError: If ``a`` is not an action definition or already has
+            a weak-fairness default.
+    """
+    return _default_fairness(a, "strong")
+
+
+@dataclass(frozen=True, init=False)
 class Specification:
     """Describe initial states, next-state alternatives, and fairness assumptions.
 
@@ -504,13 +594,15 @@ class Specification:
         init: Definition produced by ``@initial`` for the initial-state predicate.
         next: Iterable containing at least one distinct action definition,
             normally built with ``any_action``. Stored as a tuple.
-        fairness: Iterable of ``WeakFairness`` assumptions referring to the same
-            action objects as ``next``. Defaults to an empty tuple.
+        fairness: Iterable of ``WeakFairness`` or ``StrongFairness`` assumptions
+            referring to the same action objects as ``next``. Omitted or ``None``
+            adopts the actions' decorator defaults. An explicit iterable replaces
+            all defaults; an empty iterable disables fairness. Stored as a tuple.
 
     Raises:
         SpecificationError: If declarations have the wrong category, actions
             repeat, or a fairness assumption refers to an action outside ``next``.
-        TypeError: If ``next`` or ``fairness`` cannot be converted to a tuple.
+        TypeError: If ``next`` or explicit ``fairness`` cannot be iterated.
 
     Compilation allows stuttering steps that preserve all fields and restricts
     each field to its declared finite domain.
@@ -518,30 +610,54 @@ class Specification:
 
     state: type
     init: Definition
-    next: Iterable[Definition]
-    fairness: Iterable[WeakFairness] = ()
+    next: tuple[Definition, ...]
+    fairness: tuple[WeakFairness | StrongFairness, ...]
 
-    def __post_init__(self) -> None:
+    def __init__(
+        self,
+        state: type,
+        init: Definition,
+        next: Iterable[Definition],
+        fairness: Iterable[WeakFairness | StrongFairness] | None = None,
+    ) -> None:
         """Normalize iterables and validate the registered declarations.
+
+        Args:
+            state: State class registered with ``@state``.
+            init: Initial-state definition registered with ``@initial``.
+            next: Distinct action definitions describing allowed transitions.
+            fairness: Complete replacement of action defaults, or ``None`` to
+                inherit them. An empty iterable disables fairness.
 
         Raises:
             SpecificationError: If a declaration category, action identity, or
                 fairness target is invalid.
-            TypeError: If next-state alternatives or fairness assumptions cannot
-                be converted to tuples.
+            TypeError: If next-state alternatives or explicit fairness assumptions
+                cannot be converted to tuples.
         """
-        if not hasattr(self.state, "__tlacraftpy_fields__"):
+        if not hasattr(state, "__tlacraftpy_fields__"):
             raise SpecificationError("state must be an @state class")
-        if not isinstance(self.init, Definition) or self.init.kind != "initial":
+        if not isinstance(init, Definition) or init.kind != "initial":
             raise SpecificationError("init must be an @initial definition")
-        actions = tuple(self.next)
-        object.__setattr__(self, "next", actions)
-        object.__setattr__(self, "fairness", tuple(self.fairness))
-        any_action(*self.next)
-        if len({id(a) for a in self.next}) != len(actions):
+        actions = tuple(next)
+        any_action(*actions)
+        if len({id(a) for a in actions}) != len(actions):
             raise SpecificationError("Duplicate next action")
-        for fair in self.fairness:
-            if not isinstance(fair, WeakFairness) or not any(
-                fair.action is a for a in self.next
+        assumptions = (
+            tuple(
+                weak_fairness(a) if a.default_fairness == "weak" else strong_fairness(a)
+                for a in actions
+                if a.default_fairness is not None
+            )
+            if fairness is None
+            else tuple(fairness)
+        )
+        for fair in assumptions:
+            if not isinstance(fair, (WeakFairness, StrongFairness)) or not any(
+                fair.action is a for a in actions
             ):
                 raise SpecificationError("Fairness must refer to an action in next")
+        object.__setattr__(self, "state", state)
+        object.__setattr__(self, "init", init)
+        object.__setattr__(self, "next", actions)
+        object.__setattr__(self, "fairness", assumptions)

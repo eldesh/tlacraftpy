@@ -23,6 +23,9 @@ from .model import (
     unchanged,
     until,
     weak_fairness,
+    strong_fairness,
+    weakly_fair,
+    strongly_fair,
 )
 from .compiler import Artifacts, Compiled, compile_spec, export
 from .runner import CheckResult, Counterexample, Status, TraceState, check
@@ -50,6 +53,9 @@ __all__ = [
     "unchanged",
     "until",
     "weak_fairness",
+    "strong_fairness",
+    "weakly_fair",
+    "strongly_fair",
     "Artifacts",
     "Compiled",
     "compile_spec",
