@@ -172,7 +172,7 @@ elif result.status is Status.Incomplete:
 | `ValueError` | `check`の`timeout`に0以下を指定した場合 |
 | `OSError` | 生成ディレクトリ・ファイル・ログの作成や書き込みに失敗した場合 |
 
-暗黙の次状態の扱いを明示する方法は、[言語リファレンスの次状態の指定と保持](language.md#次状態の指定と保持)を参照してください。
+暗黙の次状態の扱いを明示する方法は、[言語リファレンス](language.md#次状態の制約)を参照してください。
 時間制限と性質の違反は、それぞれ`Status.Incomplete`と`Status.Violated`として返します。
 `TLCError`の診断では、表示された`tlc.log`の内容を確認できます。
 
